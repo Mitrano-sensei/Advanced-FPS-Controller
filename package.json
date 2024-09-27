@@ -1,0 +1,19 @@
+{
+  "name": "com.mitrano.fpscontroller",
+  "version": "1.0.0",
+  "displayName": "Advanced FPS Controller",
+  "description": "Reusable FPS Controller for my games",
+  "documentationUrl": "",
+  "changelogUrl": "",
+  "licensesUrl": "",
+  "dependencies": {},
+  "keywords": [
+    "FPS",
+    "Controller"
+  ],
+  "author": {
+    "name": "Elyas Tigre",
+    "email": "elyastigre@gmail.com",
+    "url": "https://github.com/Mitrano-sensei"
+  }
+}
