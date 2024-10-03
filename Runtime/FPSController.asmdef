@@ -2,7 +2,8 @@
     "name": "FPSController",
     "rootNamespace": "FPSController",
     "references": [
-        "GUID:37ba34f99fd2a3d409abaf8e538366c9"
+        "GUID:37ba34f99fd2a3d409abaf8e538366c9",
+        "GUID:75469ad4d38634e559750d17036d5f7c"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],
