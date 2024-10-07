@@ -55,14 +55,12 @@ namespace FPSController
 
         public void DrawDebug()
         {
-            if (!HasDetectedHit()) return;
+            Vector3 worldOrigin = tr.TransformPoint(origin);
 
-            Debug.DrawRay(hitInfo.point, hitInfo.normal, Color.red, Time.deltaTime);
-            float markerSize = 0.2f;
-            Debug.DrawLine(hitInfo.point + Vector3.up * markerSize, hitInfo.point - Vector3.up * markerSize, Color.green, Time.deltaTime);
-            Debug.DrawLine(hitInfo.point + Vector3.right * markerSize, hitInfo.point - Vector3.right * markerSize, Color.green, Time.deltaTime);
-            Debug.DrawLine(hitInfo.point + Vector3.forward * markerSize, hitInfo.point - Vector3.forward * markerSize, Color.green, Time.deltaTime);
+            Gizmos.color = HasDetectedHit() ? Color.red : Color.green;
+            Gizmos.DrawRay(worldOrigin, GetCastDirection() * castLength);
+
+            //if (!HasDetectedHit()) return;
         }
-
     }
 }
