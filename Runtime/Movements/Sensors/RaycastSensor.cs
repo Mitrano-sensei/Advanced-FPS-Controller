@@ -2,11 +2,11 @@ using UnityEngine;
 
 namespace FPSController
 {
-    public class SimpleRaycastSensor
+    public class RaycastSensor
     {
 
-        public float castLength = 1f;
-        public LayerMask layermask = 255;
+        private float _castLength = 1f;
+        private LayerMask _layermask = 255;
 
         Vector3 origin = Vector3.zero;
         Transform tr;
@@ -16,7 +16,7 @@ namespace FPSController
 
         RaycastHit hitInfo;
 
-        public SimpleRaycastSensor(Transform playerTransform)
+        public RaycastSensor(Transform playerTransform)
         {
             tr = playerTransform;
         }
@@ -26,7 +26,7 @@ namespace FPSController
             Vector3 worldOrigin = tr.TransformPoint(origin);
             Vector3 worldDirection = GetCastDirection();
 
-            Physics.Raycast(worldOrigin, worldDirection, out hitInfo, castLength, layermask, QueryTriggerInteraction.Ignore);
+            Physics.Raycast(worldOrigin, worldDirection, out hitInfo, _castLength, _layermask, QueryTriggerInteraction.Ignore);
         }
 
         public bool HasDetectedHit() => hitInfo.collider != null;
@@ -38,6 +38,15 @@ namespace FPSController
 
         public void SetCastDirection(CastDirection direction) => castDirection = direction;
         public void SetCastOrigin(Vector3 pos) => origin = tr.InverseTransformPoint(pos);
+        public void SetCastLength(float length) => _castLength = length;
+
+        public void SetLayerMask(LayerMask layermask) => _layermask = layermask;
+        public void AddLayer(int layer) => _layermask |= (1 << layer);
+        public void RemoveLayer(int layer) => _layermask &= ~(1 << layer);
+
+        public float GetCastLength() => _castLength;
+        public Vector3 GetRawCastOriginOffset() => origin;
+        public LayerMask GetLayerMasks() => _layermask;
 
         Vector3 GetCastDirection()
         {
@@ -58,7 +67,7 @@ namespace FPSController
             Vector3 worldOrigin = tr.TransformPoint(origin);
 
             Gizmos.color = HasDetectedHit() ? Color.red : Color.green;
-            Gizmos.DrawRay(worldOrigin, GetCastDirection() * castLength);
+            Gizmos.DrawRay(worldOrigin + Vector3.left * .5f, GetCastDirection() * _castLength);
 
             //if (!HasDetectedHit()) return;
         }

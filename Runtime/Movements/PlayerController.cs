@@ -2,7 +2,6 @@ using FiniteStateMachine;
 using System;
 using UnityEngine;
 using Utilities;
-using StateMachine = FiniteStateMachine.StateMachine;
 
 namespace FPSController
 {
@@ -10,347 +9,259 @@ namespace FPSController
     public class PlayerController : MonoBehaviour
     {
         #region Fields
-        [Header("References")]
+        [Header("Controls")]
         [SerializeField] private InputReader inputReader;
 
-        [Header("Movement")]
-        [SerializeField] private float movementSpeed = 1f;
+        [Header("Movements")]
+        [SerializeField] private PlayerMover playerMover;
         [SerializeField] private Transform orientation;
-        [SerializeField] private float groundDrag = 5f;
-        [SerializeField] private float gravityMultiplier = 2f;
-
-        [Header("Jump")]
-        [SerializeField] private float jumpForce = 5f;
-        [SerializeField] private float jumpCooldown = .25f;
-        [SerializeField] private float airMultiplier;
-
-        [SerializeField] private float coyoteeTime = .2f;
-
-        CountdownTimer _jumpTimer;
-
-        [Header("Ground Sensor")]
-        [SerializeField] private LayerMask groundLayers;
-        [SerializeField] private float groundSensorLength = 1.1f;
-        [SerializeField] private Transform origin;
-
-        float _horizontalInput, _verticalInput;
-        Vector3 _moveDirection;
-
-        Rigidbody _rb;
-
-        StopwatchTimer _groundedTimer;
-        SimpleRaycastSensor _groundSensor;
-        bool _isGrounded;
+        [SerializeField] private float gravityScale = 1f;
+        [SerializeField] private float movementSpeed = 5f;
+        [SerializeField] private float airDragRatio = .9f;
 
         private StateMachine _stateMachine;
+        private Vector2 _moveInput;
+
+        private Vector3 _momentum = Vector3.zero;
+
+        private Vector3 _movementInputLastFrame;
+        private Vector3 _velocityLastFrame;
+
+        // Debug
+        private Rigidbody _rb;
 
         #endregion
 
-        #region MonoBehaviour 
+        #region MonoBehaviour
         void Start()
         {
-            // Rigidbody
-            _rb = GetComponent<Rigidbody>();
-            _rb.freezeRotation = true;
-
-
-            // Inputs
-            inputReader.Move += HandleMovementInput;
-            inputReader.Jump += HandleJumpKeyInput;
-
-            // Initialization
-            CalibrateRaycastSensor();
-            InitializeTimers();
             SetupStateMachine();
-        }
 
-        private void Update()
-        {
+            SetupRigidbody();
+
             UpdateTimers();
 
+            inputReader.Move += input => _moveInput = input.magnitude > 1f ? input.normalized : input;
+            inputReader.Jump += b => HandleJumpKeyInput(b);
+        }
+
+        void Update()
+        {
             _stateMachine.Update();
+            TickTimers();
         }
 
         void FixedUpdate()
         {
             _stateMachine.FixedUpdate();
 
-            HandleGravity();
+            HandleMomentum();
+
+            CalculateVelocity();
 
             ResetJumpKeys();
         }
 
         private void OnValidate()
         {
-            if (!Application.isPlaying) return;
-
-            if (_jumpTimer != null && jumpCooldown != _jumpTimer.GetTime())
-            {
-                _jumpTimer = new CountdownTimer(jumpCooldown);
-            }
-
-            if (_groundSensor != null && _groundSensor.castLength != groundSensorLength)
-            {
-                CalibrateRaycastSensor();
-            }
+            if (Application.isPlaying && coyoteeTime != _coyoteeTimer.GetInitialTime())
+                UpdateTimers();
         }
 
-        private void OnDrawGizmosSelected()
-        {
-            if (_groundSensor == null) return;
-            _groundSensor.DrawDebug();
-        }
         #endregion
 
-
-        #region Private Methods
-        private void InitializeTimers()
-        {
-            _jumpTimer = new CountdownTimer(jumpCooldown);
-            _groundedTimer = new StopwatchTimer();
-        }
-
-        private void UpdateTimers()
-        {
-            _jumpTimer.Tick(Time.deltaTime);
-            _groundedTimer.Tick(Time.deltaTime);
-        }
-
         #region StateMachine
+
         private void SetupStateMachine()
         {
             _stateMachine = new StateMachine();
 
-            var groundState = new GroundState(this);
-            var airState = new AirState(this);
-            var jumpState = new JumpingState(this);
+            var groundedState = new GroundedState(this);
+            var jumpingState = new JumpingState(this);
+            var fallingState = new FallingState(this);
+            var risingState = new RisingState(this);
 
-            At(airState, groundState, () => _isGrounded);
-            At(airState, jumpState, isCoyoteeJumping);
-            At(groundState, airState, () => !_isGrounded);
-            At(groundState, jumpState, IsJumping);
-            At(jumpState, airState, HasFinishedJumping);
+            At(fallingState, groundedState, () => playerMover.IsGrounded());
+            At(groundedState, fallingState, () => !playerMover.IsGrounded() && _momentum.y <= 0f);
+            At(groundedState, risingState, () => !playerMover.IsGrounded() && _momentum.y > 0f);
+            At(risingState, fallingState, () => !playerMover.IsGrounded() && _momentum.y <= 0f);
+            At(risingState, groundedState, () => playerMover.IsGrounded());
 
-            _stateMachine.SetState(airState);
+            At(groundedState, jumpingState, IsEnteringJump);
+            At(fallingState, jumpingState, IsEnteringJump);
+            At(jumpingState, fallingState, () => _rb.velocity.y <= 0f);
+            At(jumpingState, risingState, () => _rb.velocity.y > 0f && _jumpKeyReleased);
+
+            _stateMachine.SetState(fallingState);
         }
 
         void At(IState from, IState to, Func<bool> condition) => _stateMachine.AddTransition(from, to, new FuncPredicate(condition));
-        void Any(IState to, Func<bool> condition) => _stateMachine.AddAnyTransition(to, new FuncPredicate(condition));
+
+        #endregion
+
+        #region Ground
+        internal void OnGroundExit()
+        {
+            _coyoteeTimer.Start();
+        }
         #endregion
 
         #region Jump
-        bool jumpKeyIsPressed;    // Tracks whether the jump key is currently being held down by the player
-        bool jumpKeyWasPressed;   // Indicates if the jump key was pressed since the last reset, used to detect jump initiation
-        bool jumpKeyWasLetGo;     // Indicates if the jump key was released since it was last pressed, used to detect when to stop jumping
-        bool jumpInputIsLocked;   // Prevents jump initiation when true, used to ensure only one jump action per press
 
+        [Header("Jump")]
+        [SerializeField] private float jumpForce = 5f;
+        [SerializeField] private float coyoteeTime = .15f;
 
-        void HandleJumpKeyInput(bool isJumpKeyPressed)
+        private bool _jumpKeyPressed;  // True the frame the jump key is pressed
+        private bool _jumpKeyHeld;     // True while the jump key is held
+        private bool _jumpKeyReleased; // True the frame the jump key is released
+        private bool _jumpKeyIsLocked; // To prevent multiple jumps same frame
+
+        private CountdownTimer _coyoteeTimer;
+
+        private void HandleJumpKeyInput(bool isJumpKeyPressed)
         {
-            if (!jumpKeyIsPressed && isJumpKeyPressed)
+            if (isJumpKeyPressed)
             {
-                jumpKeyWasPressed = true;
+                _jumpKeyPressed = true;
+                _jumpKeyHeld = true;
             }
-
-            if (jumpKeyIsPressed && !isJumpKeyPressed)
+            else
             {
-                jumpKeyWasLetGo = true;
-                jumpInputIsLocked = false;
-            }
-
-            jumpKeyIsPressed = isJumpKeyPressed;
-        }
-
-        void ResetJumpKeys()
-        {
-            jumpKeyWasLetGo = false;
-            jumpKeyWasPressed = false;
-        }
-
-        private bool IsJumping()
-        {
-            bool jumpInput = (jumpKeyIsPressed || jumpKeyWasPressed) && !jumpInputIsLocked;
-
-            bool canJump = jumpInput && _isGrounded;
-
-            if (canJump)
-            {
-                Debug.Log($"can jump dump : Jump Input : {jumpInput}, jumpKeyIsPressed : {jumpKeyIsPressed}, jumpKeyWasPressed : {jumpKeyWasPressed}, jumpInputIsLocked : {jumpInputIsLocked}");
-            }
-
-            return canJump;
-        }
-
-        private bool isCoyoteeJumping()
-        {
-            bool isCoyoteeJumping = jumpKeyWasPressed && _groundedTimer.GetTime() <= coyoteeTime && !jumpInputIsLocked;
-
-            if (isCoyoteeJumping) Debug.LogWarning("Coyotee Jumping !!");
-            return isCoyoteeJumping;
-        }
-
-        private bool HasFinishedJumping()
-        {
-            return jumpKeyWasLetGo || _jumpTimer.IsFinished;
-        }
-
-        #endregion
-
-        #region Movements
-        private void HandleMovementInput(Vector2 movement)
-        {
-            _horizontalInput = movement.x;
-            _verticalInput = movement.y;
-        }
-
-        private void MovePlayer(float airDragFactor = 1f)
-        {
-            _moveDirection = orientation.forward * _verticalInput + orientation.right * _horizontalInput;
-
-            _rb.AddForce(_moveDirection.normalized * movementSpeed * 30f * airDragFactor, ForceMode.Force);
-        }
-
-        private void HandleDrag()
-        {
-            // FIXME : The check is already made in groundstate, should be removed from here ?
-            _rb.drag = _isGrounded ? groundDrag : 0f;
-        }
-
-        private void HandleSpeedLimit(float limitMultiplier = 1f)
-        {
-            Vector3 flatVelocity = _rb.velocity.WithY(0);
-            var limit = limitMultiplier * movementSpeed;
-
-            if (flatVelocity.magnitude > limit)
-            {
-                Vector3 limitedVelocity = flatVelocity.normalized * limit;
-                _rb.ApplyVelocity(limitedVelocity.WithY(_rb.velocity.y));
+                _jumpKeyReleased = true;
+                _jumpKeyHeld = false;
             }
         }
 
-
-        private void HandleGravity()
+        /**
+         * Called at the end of the frame, to reset jump key inputs.
+         */
+        private void ResetJumpKeys()
         {
-            if (_stateMachine.CurrentState is GroundState) return;
-
-            _rb.AddForce(Vector3.up * Physics.gravity.y * 2f * gravityMultiplier, ForceMode.Acceleration);
-        }
-        #endregion
-
-        #region Ground Sensor
-        private void CalibrateRaycastSensor()
-        {
-            if (_groundSensor == null) _groundSensor = new SimpleRaycastSensor(transform);
-
-            _groundSensor.SetCastDirection(SimpleRaycastSensor.CastDirection.Down);
-            _groundSensor.SetCastOrigin(origin.position);
-            _groundSensor.castLength = groundSensorLength;
-            _groundSensor.layermask = groundLayers;
-
-        }
-        private void CheckGround()
-        {
-            if (_groundSensor == null) CalibrateRaycastSensor();
-
-            _groundSensor.Cast();
-            _isGrounded = _groundSensor.HasDetectedHit();
+            _jumpKeyPressed = false;
+            _jumpKeyReleased = false;
+            _jumpKeyIsLocked = false;
         }
 
-        #endregion
-
-        #endregion
-
-        #region State Methods
-
-        internal void OnGroundedEnter()
+        internal void OnJumpEnter()
         {
-            Debug.Log("On Grounded Enter Hehe");
-            _rb.RemoveVerticalVelocity();
+            if (_jumpKeyIsLocked)
+                return;
+
+            _jumpKeyIsLocked = true;
+
+            _momentum.y += jumpForce;
         }
 
-        internal void OnGroundedExit()
-        {
-            // For Coyotee Time
-            _groundedTimer.Start();
-        }
-
-        internal void OnGroundedFixedUpdate()
-        {
-            CheckGround();
-
-            MovePlayer();
-            HandleDrag();
-
-            HandleSpeedLimit();
-        }
-
-        internal void OnGroundedUpdate()
-        {
-        }
-
-        internal void OnAirEnter()
-        {
-            Debug.Log("On Air Enter Ma doude");
-        }
-
-        internal void OnAirExit()
-        {
-        }
-
-        internal void OnAirFixedUpdate()
-        {
-            CheckGround();
-
-            MovePlayer(airMultiplier);
-
-            HandleSpeedLimit(1.5f);
-        }
-
-        internal void OnAirUpdate()
-        {
-        }
-
-        internal void OnJumpingEnter()
-        {
-            // TODO : Should check if the player was sliding (on walls or slopes) before jumping
-
-            Debug.Log("On Jump Enter Mother Fucker");
-
-            _rb.ApplyVerticalVelocity(jumpForce);
-            _jumpTimer.Start();
-
-            jumpInputIsLocked = true;
-        }
-
-        internal void OnJumpingExit()
+        internal void OnJumpExit()
         {
             if (_rb.velocity.y > 0f)
-                _rb.ApplyVerticalVelocity(_rb.velocity.y * .5f);
+                _momentum -= Vector3.up * _rb.velocity.y * .5f;
         }
 
-        internal void OnJumpingFixedUpdate()
+        private bool IsEnteringJump()
         {
-            _rb.AddForce(Vector3.up * jumpForce, ForceMode.Acceleration);
+            bool defaultJump = _jumpKeyPressed && !_jumpKeyIsLocked && playerMover.IsGrounded();
+            bool coyoteeJump = _coyoteeTimer.IsRunning && _jumpKeyPressed && !_jumpKeyIsLocked && _stateMachine.CurrentState is FallingState;
 
-            CheckGround();
-            MovePlayer(airMultiplier);
-
-            HandleSpeedLimit(1.5f);
-        }
-
-        internal void OnJumpingUpdate()
-        {
+            if (_jumpKeyPressed)
+            {
+                Debug.Log("Jump pressed : Coyotee " + coyoteeJump + " default " + defaultJump);
+                Debug.Log("Coyotee : " + _coyoteeTimer.IsRunning + " Jump key locked : " + _jumpKeyIsLocked + " Is grounded : " + playerMover.IsGrounded() + " State : " + _stateMachine.CurrentState.Name);
             
+            }
+            return defaultJump || coyoteeJump;
         }
 
         #endregion
 
-        #region Debug
-        public void PrintState()
+        private void SetupRigidbody()
         {
-            Debug.Log("Current State : " + _stateMachine.CurrentState.Name);
+            if (_rb == null)
+                _rb = GetComponent<Rigidbody>();
+
+            _rb.useGravity = false;
+            _rb.freezeRotation = true;
         }
 
-        #endregion
+        private void HandleMomentum()
+        {
+            float verticalMomentum = _momentum.y;
+            Vector2 horizontalMomentum = _momentum.WithY(0);
+
+            HandleGravity(ref verticalMomentum);
+
+            _momentum = new Vector3(horizontalMomentum.x, verticalMomentum, horizontalMomentum.y);
+        }
+
+        private void CalculateVelocity()
+        {
+            var movementInput = CalculateMovementVelocity();
+            Vector3 velocity = movementInput * GetDragFromState(); // If is not grounded, will be handled by momentum
+
+            velocity += _momentum;
+
+            _movementInputLastFrame = movementInput;
+            _velocityLastFrame = velocity;
+
+            playerMover.SetVelocity(velocity + CalculateGroundAdjustmentVelocity());
+        }
+
+        private float GetDragFromState()
+        {
+            switch (_stateMachine.CurrentState)
+            {
+                case GroundedState:
+                    return 1f;
+                case RisingState:
+                    return airDragRatio;
+                case FallingState:
+                    return airDragRatio;
+                case JumpingState:
+                    return airDragRatio;
+                default:
+                    Debug.LogError("Unknown state");
+                    return 1f;
+
+            }
+        }
+
+        private Vector3 CalculateGroundAdjustmentVelocity()
+        {
+            if (_stateMachine.CurrentState is not GroundedState)
+            {
+                return Vector3.zero;
+            }
+
+            return playerMover.GetGroundAdjustmentVelocity();
+        }
+
+        private Vector3 CalculateMovementVelocity()
+        {
+            Vector3 velocity = orientation.forward * _moveInput.y * movementSpeed + orientation.right * _moveInput.x * movementSpeed;
+
+            return velocity;
+        }
+
+        private void HandleGravity(ref float verticalVelocity)
+        {
+            if (_stateMachine.CurrentState is GroundedState)
+            {
+                verticalVelocity = 0f;
+                return;
+            }
+
+            verticalVelocity += Physics.gravity.y * gravityScale * Time.fixedDeltaTime;
+        }
+
+        private void TickTimers()
+        {
+            _coyoteeTimer.Tick(Time.deltaTime);
+        }
+
+        private void UpdateTimers()
+        {
+            _coyoteeTimer = new CountdownTimer(coyoteeTime);
+        }
     }
 }
