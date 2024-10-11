@@ -12,6 +12,7 @@ namespace FPSController
         public event UnityAction<Vector2, bool> Look = delegate { }; // bool is true if the user is using the mouse, false for controller
         public event UnityAction<bool> Jump = delegate { };
         public event UnityAction<bool> Run = delegate { };
+        public event UnityAction<bool> Crouch = delegate { };
 
         FPSInputAction inputActions;
 
@@ -65,5 +66,18 @@ namespace FPSController
         }
 
         bool IsDeviceMouse(InputAction.CallbackContext context) => context.control.device.name == "Mouse";
+
+        public void OnCrouch(InputAction.CallbackContext context)
+        {
+            switch (context.phase)
+            {
+                case InputActionPhase.Performed:
+                    Crouch.Invoke(true);
+                    break;
+                case InputActionPhase.Canceled:
+                    Crouch.Invoke(false);
+                    break;
+            }
+        }
     }
 }

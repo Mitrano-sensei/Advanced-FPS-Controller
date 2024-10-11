@@ -14,16 +14,27 @@ namespace FPSController
         
         [Header("Ground Detection")]
         [SerializeField] private LayerMask groundLayers;
+        [SerializeField] private float extendedGroundSensorCastLengthRatio = 1.1f;
 
         private Vector3 _groundSensorOriginOffset = Vector3.zero;
         private float _groundSensorCastLength = 1.1f;
+
+        internal bool UseExtendedCastLength = false;
+
+        private RaycastSensor _groundSensor;
+        private bool _isGrounded;
+
+        [Header("Slope")]
+        private float maxSlopeAngle = 40f;
 
         [Header("Components")]
         [SerializeField] private CapsuleCollider playerCollider;
         [SerializeField] private Rigidbody rb;
 
-        private RaycastSensor _groundSensor;
-        private bool _isGrounded;
+        [Header("Crouching")]
+        [SerializeField] private float crouchScale = .6f;
+        private bool _isCrouching = false;
+
 
         #endregion
 
@@ -79,7 +90,9 @@ namespace FPSController
 
         private void CheckForGround()
         {
-            _groundSensor.Cast();
+            var extendedCastLengthRatio = (UseExtendedCastLength ? extendedGroundSensorCastLengthRatio : 1f);
+            var isCrouchingRatio = _isCrouching ? crouchScale : 1f;
+            _groundSensor.Cast(extendedCastLengthRatio * isCrouchingRatio);
 
             _isGrounded = _groundSensor.HasDetectedHit();
         }
@@ -109,11 +122,17 @@ namespace FPSController
         {
             var capsuleHeight = playerTotalHeight - playerLegsHeight;
 
+            if (_isCrouching)
+                transform.localScale = transform.localScale.WithY(crouchScale);
+            else
+                transform.localScale = Vector3.one;
+            
+
             playerCollider.height = capsuleHeight;
             playerCollider.radius = playerRadius;
             playerCollider.center = new Vector3(0f, capsuleHeight * .5f + playerLegsHeight, 0f);
 
-            _groundSensorCastLength = capsuleHeight * .5f + playerLegsHeight;
+            _groundSensorCastLength = (capsuleHeight * .5f + playerLegsHeight);
         }
 
         private void CheckReferences()
@@ -130,6 +149,28 @@ namespace FPSController
             Gizmos.color = Color.yellow;
             var bodyHeight = playerTotalHeight - playerLegsHeight;
             Gizmos.DrawRay(playerCollider.bounds.center, Vector3.down * (playerLegsHeight + bodyHeight * .5f));
+        }
+
+        public bool CheckSlope(ref Vector3 slopeNormal)
+        {
+            if (!_isGrounded)
+                return false;
+
+            
+            var angle = Vector3.Angle(Vector3.up, slopeNormal);
+            if (angle > 0 && angle < maxSlopeAngle)
+            {
+                slopeNormal = _groundSensor.GetNormal();
+                return true;
+            }
+
+            return false;
+        }
+
+        public void SetIsCrouching(bool isCrouching)
+        {
+            _isCrouching = isCrouching;
+            ReCalculatePlayerCollider();
         }
     }
 }

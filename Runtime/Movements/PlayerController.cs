@@ -17,6 +17,7 @@ namespace FPSController
         [SerializeField] private Transform orientation;
         [SerializeField] private float gravityScale = 1f;
         [SerializeField] private float movementSpeed = 5f;
+        [SerializeField] private float groundDragRatio = 1f;
         [SerializeField] private float airDragRatio = .9f;
 
         private StateMachine _stateMachine;
@@ -43,6 +44,7 @@ namespace FPSController
 
             inputReader.Move += input => _moveInput = input.magnitude > 1f ? input.normalized : input;
             inputReader.Jump += b => HandleJumpKeyInput(b);
+            inputReader.Crouch += b => HandleCrouchKeyInput(b);
         }
 
         void Update()
@@ -60,11 +62,12 @@ namespace FPSController
             CalculateVelocity();
 
             ResetJumpKeys();
+            ResetCrouchKeys();
         }
 
         private void OnValidate()
         {
-            if (Application.isPlaying && coyoteeTime != _coyoteeTimer.GetInitialTime())
+            if (Application.isPlaying && _coyoteeTimer != null && coyoteeTime != _coyoteeTimer.GetInitialTime())
                 UpdateTimers();
         }
 
@@ -80,6 +83,7 @@ namespace FPSController
             var jumpingState = new JumpingState(this);
             var fallingState = new FallingState(this);
             var risingState = new RisingState(this);
+            var crouchingState = new CrouchingState(this);
 
             At(fallingState, groundedState, () => playerMover.IsGrounded());
             At(groundedState, fallingState, () => !playerMover.IsGrounded() && _momentum.y <= 0f);
@@ -89,9 +93,15 @@ namespace FPSController
 
             At(groundedState, jumpingState, IsEnteringJump);
             At(fallingState, jumpingState, IsEnteringJump);
-            At(jumpingState, fallingState, () => _rb.velocity.y <= 0f);
+            At(jumpingState, fallingState, () => _rb.velocity.y < 0f);
             At(jumpingState, risingState, () => _rb.velocity.y > 0f && _jumpKeyReleased);
 
+            At(groundedState, crouchingState, IsCrouching);
+            At(crouchingState, groundedState, () => _isCrouchingKeyReleased);
+            At(crouchingState, fallingState, () => !playerMover.IsGrounded() && _momentum.y <= 0f);
+            At(crouchingState, risingState, () => !playerMover.IsGrounded() && _momentum.y > 0f);
+            At(crouchingState, jumpingState, IsEnteringJump);
+        
             _stateMachine.SetState(fallingState);
         }
 
@@ -100,9 +110,17 @@ namespace FPSController
         #endregion
 
         #region Ground
+
+        internal void OnGroundEnter()
+        {
+            playerMover.UseExtendedCastLength = true;
+            _isExitingCrouch = false;
+        }
+
         internal void OnGroundExit()
         {
             _coyoteeTimer.Start();
+            playerMover.UseExtendedCastLength = false;
         }
         #endregion
 
@@ -157,6 +175,8 @@ namespace FPSController
         {
             if (_rb.velocity.y > 0f)
                 _momentum -= Vector3.up * _rb.velocity.y * .5f;
+
+            _isExitingCrouch = false;
         }
 
         private bool IsEnteringJump()
@@ -164,17 +184,56 @@ namespace FPSController
             bool defaultJump = _jumpKeyPressed && !_jumpKeyIsLocked && playerMover.IsGrounded();
             bool coyoteeJump = _coyoteeTimer.IsRunning && _jumpKeyPressed && !_jumpKeyIsLocked && _stateMachine.CurrentState is FallingState;
 
-            if (_jumpKeyPressed)
-            {
-                Debug.Log("Jump pressed : Coyotee " + coyoteeJump + " default " + defaultJump);
-                Debug.Log("Coyotee : " + _coyoteeTimer.IsRunning + " Jump key locked : " + _jumpKeyIsLocked + " Is grounded : " + playerMover.IsGrounded() + " State : " + _stateMachine.CurrentState.Name);
-            
-            }
-            return defaultJump || coyoteeJump;
+            return (defaultJump || coyoteeJump) && !_isExitingCrouch;
         }
 
         #endregion
 
+        #region Crouch & Slide
+        private bool _isCrouchingKeyPressed;
+        private bool _isCrouchingKeyHeld;
+        private bool _isCrouchingKeyReleased;
+
+        private bool _isExitingCrouch;
+
+        private void HandleCrouchKeyInput(bool isCrouchKeyPressed)
+        {
+            if (isCrouchKeyPressed)
+            {
+                _isCrouchingKeyPressed = true;
+                _isCrouchingKeyHeld = true;
+            }
+            else
+            {
+                _isCrouchingKeyReleased = true;
+                _isCrouchingKeyHeld = false;
+            }
+        }
+
+        private void ResetCrouchKeys()
+        {
+            _isCrouchingKeyPressed = false;
+            _isCrouchingKeyReleased = false;
+        }
+
+        private bool IsCrouching()
+        {
+            return _isCrouchingKeyPressed || _isCrouchingKeyHeld;
+        }
+
+        internal void OnCrouchEnter()
+        {
+            _momentum.y -= 3f * jumpForce;
+            playerMover.SetIsCrouching(true);
+        }
+
+        internal void OnCrouchExit()
+        {
+            playerMover.SetIsCrouching(false);
+            _isExitingCrouch = true;
+        }
+
+        #endregion
         private void SetupRigidbody()
         {
             if (_rb == null)
@@ -212,13 +271,15 @@ namespace FPSController
             switch (_stateMachine.CurrentState)
             {
                 case GroundedState:
-                    return 1f;
+                    return groundDragRatio;
                 case RisingState:
                     return airDragRatio;
                 case FallingState:
                     return airDragRatio;
                 case JumpingState:
                     return airDragRatio;
+                case CrouchingState:
+                    return groundDragRatio;
                 default:
                     Debug.LogError("Unknown state");
                     return 1f;
@@ -238,6 +299,15 @@ namespace FPSController
 
         private Vector3 CalculateMovementVelocity()
         {
+            Vector3 slopeNormal = Vector3.zero;
+            if (playerMover.CheckSlope(ref slopeNormal))
+            {
+                var forward = Vector3.ProjectOnPlane(orientation.forward, slopeNormal).normalized;
+                var right = Vector3.ProjectOnPlane(orientation.right, slopeNormal).normalized;
+
+                return forward * _moveInput.y * movementSpeed + right * _moveInput.x * movementSpeed;
+            }
+
             Vector3 velocity = orientation.forward * _moveInput.y * movementSpeed + orientation.right * _moveInput.x * movementSpeed;
 
             return velocity;
@@ -245,7 +315,8 @@ namespace FPSController
 
         private void HandleGravity(ref float verticalVelocity)
         {
-            if (_stateMachine.CurrentState is GroundedState)
+            var crouchingState = (_stateMachine.CurrentState is CrouchingState && !_isCrouchingKeyPressed); // To let gravity act on the player for the first frame after crouching, to avoid falling
+            if (_stateMachine.CurrentState is GroundedState || crouchingState)
             {
                 verticalVelocity = 0f;
                 return;
@@ -263,5 +334,13 @@ namespace FPSController
         {
             _coyoteeTimer = new CountdownTimer(coyoteeTime);
         }
+
+        #region Debug
+        public void PrintState()
+        {
+            Debug.Log("Current State : " + _stateMachine.CurrentState.Name);
+        }
+
+        #endregion
     }
 }

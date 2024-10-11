@@ -21,6 +21,7 @@ namespace FPSController
         public void OnEnter()
         {
             Debug.Log("Grounded State On Enter");
+            _playerController.OnGroundEnter();
         }
 
         public void OnExit()
@@ -121,5 +122,37 @@ namespace FPSController
         public void Update()
         {
         }
+    }
+
+    public class CrouchingState : IState
+    {
+        public string Name => "Crouching State";
+        private PlayerController _playerController;
+
+        public CrouchingState(PlayerController playerController)
+        {
+            _playerController = playerController;
+        }
+
+        public void FixedUpdate()
+        {
+        }
+
+        public void OnEnter()
+        {
+            Debug.Log("Crouching State On Enter");
+            _playerController.OnCrouchEnter();
+        }
+
+        public void OnExit()
+        {
+            Debug.Log("Crouching State On Exit");
+            _playerController.OnCrouchExit();
+        }
+
+        public void Update()
+        {
+        }
+
     }
 }

@@ -21,12 +21,12 @@ namespace FPSController
             tr = playerTransform;
         }
 
-        public void Cast()
+        public void Cast(float ratio = 1f)
         {
             Vector3 worldOrigin = tr.TransformPoint(origin);
             Vector3 worldDirection = GetCastDirection();
 
-            Physics.Raycast(worldOrigin, worldDirection, out hitInfo, _castLength, _layermask, QueryTriggerInteraction.Ignore);
+            Physics.Raycast(worldOrigin, worldDirection, out hitInfo, _castLength * ratio, _layermask, QueryTriggerInteraction.Ignore);
         }
 
         public bool HasDetectedHit() => hitInfo.collider != null;
