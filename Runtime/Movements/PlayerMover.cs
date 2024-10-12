@@ -25,7 +25,7 @@ namespace FPSController
         private bool _isGrounded;
 
         [Header("Slope")]
-        private float maxSlopeAngle = 40f;
+        [SerializeField] private float maxSlopeAngle = 45f;
 
         [Header("Components")]
         [SerializeField] private CapsuleCollider playerCollider;
@@ -111,9 +111,9 @@ namespace FPSController
                 return Vector3.zero;
 
             float distance = _groundSensor.GetDistance();
-            var distanceToGo = (_groundSensorCastLength) - distance;
+            var distanceToGo = _groundSensorCastLength - distance;
 
-            return Vector3.up * distanceToGo * 10f; // <= Tbh it's a magic number, but it works
+            return Vector3.up * distanceToGo;
         }
 
         #endregion
@@ -151,20 +151,34 @@ namespace FPSController
             Gizmos.DrawRay(playerCollider.bounds.center, Vector3.down * (playerLegsHeight + bodyHeight * .5f));
         }
 
+        /**
+         * Returns if the player is grounded AND on a slope
+         * If true, gives slopeNormal. Does not change slopeNormal if not grounded
+         */
         public bool CheckSlope(ref Vector3 slopeNormal)
         {
             if (!_isGrounded)
                 return false;
 
-            
-            var angle = Vector3.Angle(Vector3.up, slopeNormal);
+            var normal = _groundSensor.GetNormal();
+            var angle = Vector3.Angle(Vector3.up, normal);
             if (angle > 0 && angle < maxSlopeAngle)
             {
-                slopeNormal = _groundSensor.GetNormal();
+                slopeNormal = normal;
                 return true;
             }
 
             return false;
+        }
+
+        public Vector3 GetSlopeNormal()
+        {
+            var normal = _groundSensor.GetNormal();
+            var angle = Vector3.Angle(Vector3.up, normal);
+            if (angle > 0 && angle < maxSlopeAngle)
+                return normal;
+
+            return Vector3.up;
         }
 
         public void SetIsCrouching(bool isCrouching)

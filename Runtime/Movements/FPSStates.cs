@@ -3,7 +3,13 @@ using UnityEngine;
 
 namespace FPSController
 {
-    public class GroundedState : IState
+    public interface IFPSState
+    {
+        float GetAirControlRatio();
+
+    }
+
+    public class GroundedState : IState, IFPSState
     {
         public string Name => "Grounded State";
         private PlayerController _playerController;
@@ -12,6 +18,8 @@ namespace FPSController
         {
             _playerController = playerController;
         }
+
+        public float GetAirControlRatio() => 1f; // TODO : Add to constructor so it can be changed with SerializeField
 
         public void FixedUpdate()
         {
@@ -35,7 +43,7 @@ namespace FPSController
         }
     }
 
-    public class JumpingState : IState
+    public class JumpingState : IState, IFPSState
     {
         public string Name => "Jumping State";
         private PlayerController _playerController;
@@ -44,6 +52,9 @@ namespace FPSController
         {
             _playerController = playerController;
         }
+
+        public float GetAirControlRatio() => .8f;
+
 
         public void FixedUpdate()
         {
@@ -66,7 +77,7 @@ namespace FPSController
         }
     }
 
-    public class  FallingState : IState
+    public class  FallingState : IState, IFPSState
     {
         public string Name => "Falling State";
         private PlayerController _playerController;
@@ -75,6 +86,8 @@ namespace FPSController
         {
             _playerController = playerController;
         }
+
+        public float GetAirControlRatio() => .8f;
 
         public void FixedUpdate()
         {
@@ -95,7 +108,7 @@ namespace FPSController
         }
     }
 
-    public class RisingState : IState
+    public class RisingState : IState, IFPSState
     {
         public string Name => "Rising State";
         private PlayerController _playerController;
@@ -104,6 +117,8 @@ namespace FPSController
         {
             _playerController = playerController;
         }
+
+        public float GetAirControlRatio() => .8f;
 
         public void FixedUpdate()
         {
@@ -124,7 +139,7 @@ namespace FPSController
         }
     }
 
-    public class CrouchingState : IState
+    public class CrouchingState : IState, IFPSState
     {
         public string Name => "Crouching State";
         private PlayerController _playerController;
@@ -133,6 +148,8 @@ namespace FPSController
         {
             _playerController = playerController;
         }
+
+        public float GetAirControlRatio() => 1f;
 
         public void FixedUpdate()
         {
@@ -154,5 +171,39 @@ namespace FPSController
         {
         }
 
+    }
+
+    public class SlidingState : IState, IFPSState
+    {
+        public string Name => "Sliding State";
+        private PlayerController _playerController;
+
+        public SlidingState(PlayerController playerController)
+        {
+            _playerController = playerController;
+        }
+
+        public float GetAirControlRatio() => .3f;
+
+        public void FixedUpdate()
+        {
+            _playerController.OnSlideFixedUpdate();
+        }
+
+        public void OnEnter()
+        {
+            Debug.Log("Sliding State On Enter");
+            _playerController.OnSlideEnter();
+        }
+
+        public void OnExit()
+        {
+            Debug.Log("Sliding State On Exit");
+            _playerController.OnSlideExit();
+        }
+
+        public void Update()
+        {
+        }
     }
 }
