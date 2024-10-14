@@ -2,6 +2,7 @@ using FiniteStateMachine;
 using System;
 using UnityEngine;
 using Utilities;
+using static FPSController.ClimbMovement;
 
 namespace FPSController
 {
@@ -18,6 +19,7 @@ namespace FPSController
         [SerializeField] private float gravityScale = 1f;
         [SerializeField] private float movementSpeed = 5f;
         [SerializeField] private float groundDrag = 6f;
+        [SerializeField] private float timeToChangeSpeedInSeconds = 1f;
 
         [Header("Jump")]
         [SerializeField] private float jumpForce = 5f;
@@ -28,11 +30,23 @@ namespace FPSController
         private bool _jumpKeyReleased; // True the frame the jump key is released
         private bool _jumpKeyIsLocked; // To prevent multiple jumps same frame
 
-        [Header("Sliding")]
+        public bool JumpKeyPressed { get => _jumpKeyPressed; private set => _jumpKeyPressed = value; }
+        public bool JumpKeyHeld { get => _jumpKeyHeld; private set => _jumpKeyHeld = value; }
+        public bool JumpKeyReleased { get => _jumpKeyReleased; private set => _jumpKeyReleased = value; }
+
+        [Header("Crouching & Sliding")]
         [SerializeField] private float slideBoost = 3f;
-        [SerializeField] private float crouchSpeedRatio = .7f;
         [SerializeField] private float slideDragRatio = .2f;
         [SerializeField] private float minimumSlideVelocity = 1f;
+
+        [Header("Climb")]
+        [SerializeField] private ClimbMovement climbMovement;
+
+        public Vector3 CurrentSlopeNormal => _currentSlopeNormal;
+        public IState CurrentState => _stateMachine.CurrentState;
+
+        internal void SetMaxSpeed(float v) => _currentMaxSpeed = v;
+
 
         private bool _isCrouchingKeyPressed;
         private bool _isCrouchingKeyHeld;
@@ -40,10 +54,13 @@ namespace FPSController
 
         private bool _isExitingCrouch;
 
-
         private StateMachine _stateMachine;
         private Vector2 _moveInput;
         private Vector3 _currentSlopeNormal;
+
+        internal float _currentMaxSpeed;
+        internal float _speedWhenChanged;
+        internal StopwatchTimer _changeStateTimer = new();
 
         private Vector3 _movementInputLastFrame;
         private Vector3 _velocityLastFrame;
@@ -75,6 +92,8 @@ namespace FPSController
             _stateMachine.Update();
             TickTimers();
 
+            climbMovement.WallCheck();
+
             // Debug
             if (Input.GetKeyDown(KeyCode.G))
             {
@@ -85,13 +104,11 @@ namespace FPSController
         void FixedUpdate()
         {
             _stateMachine.FixedUpdate();
-
             CalculateSlope();
 
             HandleGravity();
             AdjustToGround();
 
-            CalculateVelocity();
             HandleSpeedLimit();
             HandleDrag();
 
@@ -127,7 +144,6 @@ namespace FPSController
         #endregion
 
         #region StateMachine
-        private IState CurrentState => _stateMachine.CurrentState;
         private void SetupStateMachine()
         {
             _stateMachine = new StateMachine();
@@ -138,6 +154,7 @@ namespace FPSController
             var risingState = new RisingState(this);
             var crouchingState = new CrouchingState(this);
             var slidingState = new SlidingState(this);
+            var climbingState = new ClimbingState(this, climbMovement);
 
             At(fallingState, groundedState, () => playerMover.IsGrounded());
             At(groundedState, fallingState, () => !playerMover.IsGrounded() && _rb.velocity.y <= 0f);
@@ -157,12 +174,17 @@ namespace FPSController
             At(slidingState, fallingState, () => !playerMover.IsGrounded() && _rb.velocity.y <= 0f);
             At(slidingState, risingState, () => !playerMover.IsGrounded() && _rb.velocity.y > 0f);
 
-            At(groundedState, crouchingState, IsCrouching);
+            At(groundedState, crouchingState, () => IsCrouching() && _rb.velocity.magnitude < minimumSlideVelocity);
             At(crouchingState, groundedState, () => _isCrouchingKeyReleased);
             At(crouchingState, fallingState, () => !playerMover.IsGrounded() && _rb.velocity.y <= 0f);
             At(crouchingState, risingState, () => !playerMover.IsGrounded() && _rb.velocity.y > 0f);
             At(crouchingState, jumpingState, IsEnteringJump);
 
+            At(jumpingState, climbingState, climbMovement.IsClimbingEnter);
+            At(risingState, climbingState, climbMovement.IsClimbingEnter);
+            At(fallingState, climbingState, climbMovement.IsClimbingEnter);
+            At(climbingState, fallingState, climbMovement.IsClimbingExit);
+            
             _stateMachine.SetState(fallingState);
         }
 
@@ -176,6 +198,7 @@ namespace FPSController
         {
             playerMover.UseExtendedCastLength = true;
             _isExitingCrouch = false;
+            SetupLerpToDefaultMoveSpeed();
         }
 
         internal void OnGroundExit()
@@ -272,6 +295,8 @@ namespace FPSController
         {
             playerMover.SetIsCrouching(true);
             _rb.AddForce(-Vector3.up * 5f, ForceMode.Impulse);
+
+            SetupLerpToDefaultMoveSpeed();
         }
 
         internal void OnCrouchExit()
@@ -287,12 +312,16 @@ namespace FPSController
             
             playerMover.SetIsCrouching(true);
             _rb.AddForce(-Vector3.up * 5f, ForceMode.Impulse);
+
+            SetMaxSpeed(GetFlatVelocity(_rb.velocity).magnitude);
         }
 
         internal void OnSlideExit()
         {
             playerMover.SetIsCrouching(false);
             _isExitingCrouch = true;
+
+            _coyoteeTimer.Start();
         }
 
         internal void OnSlideFixedUpdate()
@@ -323,13 +352,12 @@ namespace FPSController
         #endregion
 
         #region Movement Control
-        private void CalculateVelocity()
-        {
-            if (CurrentState is SlidingState)
-                return;
+        public float GetCurrentMaxSpeed() => _currentMaxSpeed;
 
+        internal void CalculateVelocity(float ratio = 1f)
+        {
             var movementInput = CalculateMovementVelocity();
-            Vector3 velocity = movementInput * GetMovementControlFromState(); // If is not grounded, will be handled by momentum
+            Vector3 velocity = movementInput * ratio;
             _rb.AddForce(velocity, ForceMode.Impulse);
 
             _movementInputLastFrame = movementInput;
@@ -338,43 +366,53 @@ namespace FPSController
 
         private void HandleDrag()
         {
-            switch (CurrentState)
+            if (!playerMover.IsGrounded())
             {
-                case GroundedState:
-                    _rb.drag = groundDrag;
-                    break;
-                case CrouchingState:
-                    _rb.drag = groundDrag;
-                    break;
-                case SlidingState:
-                    _rb.drag = groundDrag * slideDragRatio;
-                    break;
-                default:
-                    _rb.drag = 0f;
-                    break;
+                _rb.drag = 0;
+                return;
             }
+
+            if (CurrentState is SlidingState)
+                _rb.drag = slideDragRatio;
+            else
+                _rb.drag = groundDrag;
         }
 
         private void HandleSpeedLimit()
         {
-            if (CurrentState is SlidingState)
+            var state = (CurrentState as IFPSState);
+
+            if (state == null) Debug.LogError("Current State " + CurrentState.Name + " is not an IFPSState");
+            if (!state.IsLimitedSpeed())
                 return;
 
             Vector3 velocity = _rb.velocity;
-            Vector3 flatVelocity = velocity.RemoveDotVector(_currentSlopeNormal);
+            Vector3 flatVelocity = GetFlatVelocity(velocity);
             float verticalVelocity = Vector3.Dot(velocity, _currentSlopeNormal.normalized);
 
-            var maxSpeed = movementSpeed * (CurrentState is CrouchingState ? crouchSpeedRatio : 1f);
-
-            if (flatVelocity.magnitude > maxSpeed) // FIXME : _rb.velocity should be replaced by "flat velocity" accounting slopes
+            if (flatVelocity.magnitude > _currentMaxSpeed)
             {
-                _rb.ApplyVelocity(flatVelocity.normalized * maxSpeed + verticalVelocity * _currentSlopeNormal.normalized);
+                var currentSpeed = Mathf.Lerp(_speedWhenChanged, _currentMaxSpeed, _changeStateTimer.GetCurrentTime() / (timeToChangeSpeedInSeconds * (_moveInput.magnitude + .05f)));
+                if (Mathf.Abs(currentSpeed - _currentMaxSpeed) < .05f)
+                    currentSpeed = _currentMaxSpeed;
+
+                _rb.ApplyVelocity(flatVelocity.normalized * currentSpeed + verticalVelocity * _currentSlopeNormal.normalized);
             }
+        }
+
+        /**
+         * Gets Velocity, not taking account vertical velocity, and taking slopes into accounts
+         */
+        private Vector3 GetFlatVelocity(Vector3 velocity)
+        {
+            Vector3 flatVelocity = velocity.RemoveDotVector(_currentSlopeNormal);
+
+            return flatVelocity;
         }
 
         private void AdjustToGround()
         {
-            if (CurrentState is not (GroundedState or CrouchingState or SlidingState))
+            if (!playerMover.IsGrounded())
                 return;
 
             _rb.ApplyVelocity(_rb.velocity + CalculateGroundAdjustmentVelocity());
@@ -383,7 +421,7 @@ namespace FPSController
         /**
          * When in the air, the player has less control over its movement.
          */
-        private float GetMovementControlFromState()
+        private float GetMovementSpeedFromState()
         {
             var currentFpsState = CurrentState as IFPSState;
 
@@ -393,7 +431,7 @@ namespace FPSController
                 return 1f;
             }
 
-            return currentFpsState.GetAirControlRatio();
+            return currentFpsState.GetMovementSpeedRatio();
         }
 
         private Vector3 CalculateGroundAdjustmentVelocity()
@@ -406,7 +444,7 @@ namespace FPSController
             return playerMover.GetGroundAdjustmentVelocity();
         }
 
-        private Vector3 CalculateMovementVelocity()
+        public Vector3 CalculateMovementVelocity()
         {
             var forward = Vector3.ProjectOnPlane(orientation.forward, _currentSlopeNormal).normalized;
             var right = Vector3.ProjectOnPlane(orientation.right, _currentSlopeNormal).normalized;
@@ -421,12 +459,22 @@ namespace FPSController
 
         private void HandleGravity()
         {
-            var crouchingState = (CurrentState is CrouchingState && !_isCrouchingKeyPressed); // To let gravity act on the player for the first frame after crouching, to avoid falling
-            if (CurrentState is GroundedState || crouchingState)
+            if (playerMover.IsGrounded())
                 return;
 
             _rb.AddForce(Vector3.down * gravityScale, ForceMode.Impulse);
         }
+
+        internal void SetupLerpToDefaultMoveSpeed()
+        {
+            // Handle Speed On Change State
+            _changeStateTimer.Reset();
+            _changeStateTimer.Start();
+            _speedWhenChanged = GetFlatVelocity(_rb.velocity).magnitude;
+
+            _currentMaxSpeed = movementSpeed;
+        }
+
         #endregion
 
         #region Setup
@@ -442,6 +490,7 @@ namespace FPSController
         private void TickTimers()
         {
             _coyoteeTimer.Tick(Time.deltaTime);
+            _changeStateTimer.Tick(Time.deltaTime);
         }
 
         private void UpdateTimers()
