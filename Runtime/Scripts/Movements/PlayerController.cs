@@ -3,6 +3,7 @@ using System;
 using UnityEngine;
 using Utilities;
 using static FPSController.ClimbMovement;
+using static FPSController.SlideMovement;
 
 namespace FPSController
 {
@@ -14,7 +15,7 @@ namespace FPSController
         [SerializeField] private InputReader inputReader;
 
         [Header("Movements")]
-        [SerializeField] private PlayerMover playerMover;
+        [SerializeField] private PlayerBody playerBody;
         [SerializeField] private Transform orientation;
         [SerializeField] private float gravityScale = 1f;
         [SerializeField] private float movementSpeed = 5f;
@@ -34,10 +35,8 @@ namespace FPSController
         public bool JumpKeyHeld { get => _jumpKeyHeld; private set => _jumpKeyHeld = value; }
         public bool JumpKeyReleased { get => _jumpKeyReleased; private set => _jumpKeyReleased = value; }
 
-        [Header("Crouching & Sliding")]
-        [SerializeField] private float slideBoost = 3f;
-        [SerializeField] private float slideDragRatio = .2f;
-        [SerializeField] private float minimumSlideVelocity = 1f;
+        [Header("Sliding")]
+        [SerializeField] private SlideMovement slideMovement;
 
         [Header("Climb")]
         [SerializeField] private ClimbMovement climbMovement;
@@ -47,10 +46,15 @@ namespace FPSController
 
         internal void SetMaxSpeed(float v) => _currentMaxSpeed = v;
 
+        public float MovementSpeed { get => movementSpeed; }
 
         private bool _isCrouchingKeyPressed;
         private bool _isCrouchingKeyHeld;
         private bool _isCrouchingKeyReleased;
+
+        public bool IsCrouchingKeyPressed { get => _isCrouchingKeyPressed; private set => _isCrouchingKeyPressed = value; }
+        public bool IsCrouchingKeyHeld { get => _isCrouchingKeyHeld; private set => _isCrouchingKeyHeld = value; }
+        public bool IsCrouchingKeyReleased { get => _isCrouchingKeyReleased; private set => _isCrouchingKeyReleased = value; }
 
         private bool _isExitingCrouch;
 
@@ -153,31 +157,31 @@ namespace FPSController
             var fallingState = new FallingState(this);
             var risingState = new RisingState(this);
             var crouchingState = new CrouchingState(this);
-            var slidingState = new SlidingState(this);
+            var slidingState = new SlidingState(this, slideMovement);
             var climbingState = new ClimbingState(this, climbMovement);
 
-            At(fallingState, groundedState, () => playerMover.IsGrounded());
-            At(groundedState, fallingState, () => !playerMover.IsGrounded() && _rb.velocity.y <= 0f);
-            At(groundedState, risingState, () => !playerMover.IsGrounded() && _rb.velocity.y > 0f);
-            At(risingState, fallingState, () => !playerMover.IsGrounded() && _rb.velocity.y <= 0f);
-            At(risingState, groundedState, () => playerMover.IsGrounded());
+            At(fallingState, groundedState, () => playerBody.IsGrounded());
+            At(groundedState, fallingState, () => !playerBody.IsGrounded() && _rb.velocity.y <= 0f);
+            At(groundedState, risingState, () => !playerBody.IsGrounded() && _rb.velocity.y > 0f);
+            At(risingState, fallingState, () => !playerBody.IsGrounded() && _rb.velocity.y <= 0f);
+            At(risingState, groundedState, () => playerBody.IsGrounded());
 
             At(groundedState, jumpingState, IsEnteringJump);
             At(fallingState, jumpingState, IsEnteringJump);
             At(jumpingState, fallingState, () => _rb.velocity.y < 0f);
             At(jumpingState, risingState, () => _rb.velocity.y > 0f && _jumpKeyReleased);
 
-            At(groundedState, slidingState, () => IsSliding());
-            At(slidingState, crouchingState, () => !IsSliding() && IsCrouching());
-            At(slidingState, groundedState, () => !IsSliding() && playerMover.IsGrounded() && !IsCrouching());
+            At(groundedState, slidingState, () => slideMovement.IsSliding());
+            At(slidingState, crouchingState, () => !slideMovement.IsSliding() && IsCrouching());
+            At(slidingState, groundedState, () => !slideMovement.IsSliding() && playerBody.IsGrounded() && !IsCrouching());
             At(slidingState, jumpingState, IsEnteringJump);
-            At(slidingState, fallingState, () => !playerMover.IsGrounded() && _rb.velocity.y <= 0f);
-            At(slidingState, risingState, () => !playerMover.IsGrounded() && _rb.velocity.y > 0f);
+            At(slidingState, fallingState, () => !playerBody.IsGrounded() && _rb.velocity.y <= 0f);
+            At(slidingState, risingState, () => !playerBody.IsGrounded() && _rb.velocity.y > 0f);
 
-            At(groundedState, crouchingState, () => IsCrouching() && _rb.velocity.magnitude < minimumSlideVelocity);
+            At(groundedState, crouchingState, () => IsCrouching() && !slideMovement.IsSliding());
             At(crouchingState, groundedState, () => _isCrouchingKeyReleased);
-            At(crouchingState, fallingState, () => !playerMover.IsGrounded() && _rb.velocity.y <= 0f);
-            At(crouchingState, risingState, () => !playerMover.IsGrounded() && _rb.velocity.y > 0f);
+            At(crouchingState, fallingState, () => !playerBody.IsGrounded() && _rb.velocity.y <= 0f);
+            At(crouchingState, risingState, () => !playerBody.IsGrounded() && _rb.velocity.y > 0f);
             At(crouchingState, jumpingState, IsEnteringJump);
 
             At(jumpingState, climbingState, climbMovement.IsClimbingEnter);
@@ -196,7 +200,7 @@ namespace FPSController
 
         internal void OnGroundEnter()
         {
-            playerMover.UseExtendedCastLength = true;
+            playerBody.UseExtendedCastLength = true;
             _isExitingCrouch = false;
             SetupLerpToDefaultMoveSpeed();
         }
@@ -204,7 +208,7 @@ namespace FPSController
         internal void OnGroundExit()
         {
             _coyoteeTimer.Start();
-            playerMover.UseExtendedCastLength = false;
+            playerBody.UseExtendedCastLength = false;
         }
         #endregion
 
@@ -254,9 +258,11 @@ namespace FPSController
             _isExitingCrouch = false;
         }
 
+        public void StartCoyoteeTimer() => _coyoteeTimer.Start();
+
         private bool IsEnteringJump()
         {
-            bool defaultJump = _jumpKeyPressed && !_jumpKeyIsLocked && playerMover.IsGrounded();
+            bool defaultJump = _jumpKeyPressed && !_jumpKeyIsLocked && playerBody.IsGrounded();
             bool coyoteeJump = _coyoteeTimer.IsRunning && _jumpKeyPressed && !_jumpKeyIsLocked && CurrentState is FallingState;
 
             return (defaultJump || coyoteeJump) && !_isExitingCrouch;
@@ -265,6 +271,7 @@ namespace FPSController
         #endregion
 
         #region Crouch & Slide        
+        public void SetIsExitingCrouch(bool v) => _isExitingCrouch = v;
 
         private void HandleCrouchKeyInput(bool isCrouchKeyPressed)
         {
@@ -293,7 +300,7 @@ namespace FPSController
 
         internal void OnCrouchEnter()
         {
-            playerMover.SetIsCrouching(true);
+            playerBody.SetIsCrouching(true);
             _rb.AddForce(-Vector3.up * 5f, ForceMode.Impulse);
 
             SetupLerpToDefaultMoveSpeed();
@@ -301,53 +308,9 @@ namespace FPSController
 
         internal void OnCrouchExit()
         {
-            playerMover.SetIsCrouching(false);
+            playerBody.SetIsCrouching(false);
             _isExitingCrouch = true;
         }
-
-        internal void OnSlideEnter()
-        {
-            var forward = CalculateMovementVelocity().normalized;
-            _rb.AddForce(forward * slideBoost, ForceMode.Impulse);
-            
-            playerMover.SetIsCrouching(true);
-            _rb.AddForce(-Vector3.up * 5f, ForceMode.Impulse);
-
-            SetMaxSpeed(GetFlatVelocity(_rb.velocity).magnitude);
-        }
-
-        internal void OnSlideExit()
-        {
-            playerMover.SetIsCrouching(false);
-            _isExitingCrouch = true;
-
-            _coyoteeTimer.Start();
-        }
-
-        internal void OnSlideFixedUpdate()
-        {
-            SlideOnSlope();
-        }
-
-        private void SlideOnSlope()
-        {
-            if (_currentSlopeNormal == Vector3.up)
-                return;
-
-            var horizontalDirection = Vector3.Cross(_currentSlopeNormal, Vector3.up);       // "Right" direction on the slope, horizontal part of the slope
-            var slopeDirection = Vector3.Cross(_currentSlopeNormal, horizontalDirection);   // Direction of the slope (going down)
-
-            var slopeAngle = Vector3.Angle(Vector3.up, _currentSlopeNormal);
-            var speedRatio = slopeAngle / 20f;
-
-            _rb.AddForce(slopeDirection * movementSpeed * speedRatio, ForceMode.Impulse);
-        }
-
-        private bool IsSliding()
-        {
-            return (_isCrouchingKeyPressed || _isCrouchingKeyHeld) && (playerMover.IsGrounded() && (_rb.velocity.magnitude > minimumSlideVelocity));
-        }
-
 
         #endregion
 
@@ -366,14 +329,14 @@ namespace FPSController
 
         private void HandleDrag()
         {
-            if (!playerMover.IsGrounded())
+            if (!playerBody.IsGrounded())
             {
                 _rb.drag = 0;
                 return;
             }
 
             if (CurrentState is SlidingState)
-                _rb.drag = slideDragRatio;
+                _rb.drag = slideMovement.SlideDragRatio * groundDrag;
             else
                 _rb.drag = groundDrag;
         }
@@ -403,8 +366,9 @@ namespace FPSController
         /**
          * Gets Velocity, not taking account vertical velocity, and taking slopes into accounts
          */
-        private Vector3 GetFlatVelocity(Vector3 velocity)
+        public Vector3 GetFlatVelocity(Vector3 velocity)
         {
+            // FIXME : Should be in playerMover ?
             Vector3 flatVelocity = velocity.RemoveDotVector(_currentSlopeNormal);
 
             return flatVelocity;
@@ -412,7 +376,7 @@ namespace FPSController
 
         private void AdjustToGround()
         {
-            if (!playerMover.IsGrounded())
+            if (!playerBody.IsGrounded())
                 return;
 
             _rb.ApplyVelocity(_rb.velocity + CalculateGroundAdjustmentVelocity());
@@ -441,7 +405,7 @@ namespace FPSController
                 return Vector3.zero;
             }
 
-            return playerMover.GetGroundAdjustmentVelocity();
+            return playerBody.GetGroundAdjustmentVelocity();
         }
 
         public Vector3 CalculateMovementVelocity()
@@ -454,12 +418,12 @@ namespace FPSController
 
         private void CalculateSlope()
         {
-            _currentSlopeNormal = playerMover.GetSlopeNormal();
+            _currentSlopeNormal = playerBody.GetSlopeNormal();
         }
 
         private void HandleGravity()
         {
-            if (playerMover.IsGrounded())
+            if (playerBody.IsGrounded())
                 return;
 
             _rb.AddForce(Vector3.down * gravityScale, ForceMode.Impulse);

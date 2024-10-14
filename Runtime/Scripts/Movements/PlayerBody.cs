@@ -4,7 +4,7 @@ using Utilities;
 
 namespace FPSController
 {
-    public class PlayerMover : MonoBehaviour
+    public class PlayerBody : MonoBehaviour
     {
         #region Fields
         [Header("Player Collider Info")]

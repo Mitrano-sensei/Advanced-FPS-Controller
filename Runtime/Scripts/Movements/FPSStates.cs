@@ -169,40 +169,4 @@ namespace FPSController
         }
 
     }
-
-    public class SlidingState : IState, IFPSState
-    {
-        public string Name => "Sliding State";
-        private PlayerController _playerController;
-
-        public SlidingState(PlayerController playerController)
-        {
-            _playerController = playerController;
-        }
-
-        public float GetMovementSpeedRatio() => .1f;
-
-        public void FixedUpdate()
-        {
-            _playerController.CalculateVelocity(GetMovementSpeedRatio());
-
-            _playerController.OnSlideFixedUpdate();
-        }
-
-        public void OnEnter()
-        {
-            _playerController.OnSlideEnter();
-        }
-
-        public void OnExit()
-        {
-            _playerController.OnSlideExit();
-        }
-
-        public void Update()
-        {
-        }
-
-        public bool IsLimitedSpeed() => false;
-    }
 }
