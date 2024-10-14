@@ -9,13 +9,13 @@ namespace FPSController
     {
         [Header("References")]
         [SerializeField] private Transform orientation;
-        [SerializeField] private Rigidbody rb;
-        [SerializeField] private LayerMask whatIsWall;
 
+        private Rigidbody _rb;
         private PlayerController _playerController;
 
         [Header("Climb Settings")]
         [SerializeField] private float climbTimeInSeconds = 1f;
+        [SerializeField] private LayerMask whatIsWall;
 
         private CountdownTimer _climbTimer;
 
@@ -32,6 +32,7 @@ namespace FPSController
         private void Awake()
         {
             _playerController = GetComponent<PlayerController>();
+            _rb = GetComponent<Rigidbody>();
         }
 
         #region Check
@@ -43,7 +44,7 @@ namespace FPSController
 
         public bool IsClimbingEnter()
         {
-            return _isWallInFront && _wallLookAngle < maxWallLookAngle && (_playerController.JumpKeyPressed || _playerController.JumpKeyHeld);
+            return _isWallInFront && _wallLookAngle < maxWallLookAngle && (_playerController.JumpKeyPressed || _playerController.JumpKeyHeld) && !_playerController.IsExitingClimb;
         }
 
         public bool IsClimbingExit()
@@ -68,11 +69,12 @@ namespace FPSController
 
         public void OnClimbFixedUpdate()
         {
-            rb.ApplyVerticalVelocity(_playerController.GetCurrentMaxSpeed());
+            _rb.ApplyVerticalVelocity(_playerController.GetCurrentMaxSpeed());
         }
 
         public void OnClimbExit()
         {
+            _playerController.IsExitingClimb = true;
         }
 
         public class ClimbingState : IState, IFPSState

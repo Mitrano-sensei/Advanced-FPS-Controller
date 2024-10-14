@@ -98,6 +98,9 @@ GameObject:
   - component: {fileID: 5373257976686980772}
   - component: {fileID: 6293291026301167093}
   - component: {fileID: 5718088997599186080}
+  - component: {fileID: 3405812349272681665}
+  - component: {fileID: 4949960695346568988}
+  - component: {fileID: 8449796291152742523}
   m_Layer: 0
   m_Name: Player
   m_TagString: Untagged
@@ -170,17 +173,19 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: dbe3dae7a3eda0a438e8cf1b7e77d964, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  inputReader: {fileID: 11400000, guid: 19fc54898783fad468b6ac02f6799fc3, type: 2}
-  playerMover: {fileID: 5373257976686980772}
+  playerBody: {fileID: 5373257976686980772}
   orientation: {fileID: 8467564415358812745}
-  gravityScale: 1
-  movementSpeed: 8
-  groundDrag: 7
-  timeToChangeSpeedInSeconds: 1.2
-  jumpForce: 20
-  coyoteeTime: 0.3
+  inputReader: {fileID: 11400000, guid: 19fc54898783fad468b6ac02f6799fc3, type: 2}
   slideMovement: {fileID: 5718088997599186080}
   climbMovement: {fileID: 6293291026301167093}
+  groundMovement: {fileID: 3405812349272681665}
+  jumpMovement: {fileID: 4949960695346568988}
+  crouchMovement: {fileID: 8449796291152742523}
+  gravityScale: 1
+  movementSpeed: 8
+  timeToChangeSpeedInSeconds: 1.2
+  groundDrag: 7
+  coyoteeTime: 0.3
   debugMovement: 1
 --- !u!114 &5373257976686980772
 MonoBehaviour:
@@ -218,11 +223,10 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   orientation: {fileID: 8467564415358812745}
-  rb: {fileID: 3544581701132440299}
+  climbTimeInSeconds: 1
   whatIsWall:
     serializedVersion: 2
     m_Bits: 1
-  climbTimeInSeconds: 1
   detectionDistance: 0.55
   sphereCastRadius: 0.5
   maxWallLookAngle: 30
@@ -238,13 +242,47 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 450ae6743ef0ceb4e8d1c2d20b92166d, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  playerController: {fileID: 4696743177449789520}
-  playerMover: {fileID: 5373257976686980772}
-  rb: {fileID: 3544581701132440299}
   orientation: {fileID: 8467564415358812745}
   slideBoost: 15
   slideDragRatio: 0.2
   minimumSlideVelocity: 1
+--- !u!114 &3405812349272681665
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2424576124709715599}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8e390ab30a6711b458cb92fccb94c96c, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+--- !u!114 &4949960695346568988
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2424576124709715599}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4f4ce9f68b7a54e498736b10924ce131, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  jumpForce: 20
+--- !u!114 &8449796291152742523
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2424576124709715599}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: da64df7d739e30a429e98478ba715019, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
 --- !u!1 &6137687421403873252
 GameObject:
   m_ObjectHideFlags: 0

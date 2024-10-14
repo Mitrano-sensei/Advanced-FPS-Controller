@@ -8,10 +8,11 @@ namespace FPSController
     {
         #region Fields
         [Header("References")]
-        [SerializeField] private PlayerController playerController;
-        [SerializeField] private PlayerBody playerMover;
-        [SerializeField] private Rigidbody rb;
         [SerializeField] private Transform orientation;
+
+        private PlayerController _playerController;
+        private PlayerBody _playerBody;
+        private Rigidbody _rb;
 
         [Header("Sliding")]
         [SerializeField] private float slideBoost = 3f;
@@ -25,14 +26,14 @@ namespace FPSController
         #region MonoBehaviour
         private void Awake()
         {
-            if (playerController == null)
-                playerController = GetComponent<PlayerController>();
+            if (_playerController == null)
+                _playerController = GetComponent<PlayerController>();
 
-            if (rb == null)
-                rb = GetComponent<Rigidbody>();
+            if (_rb == null)
+                _rb = GetComponent<Rigidbody>();
 
-            if (playerMover == null)
-                playerMover = GetComponent<PlayerBody>();
+            if (_playerBody == null)
+                _playerBody = GetComponent<PlayerBody>();
 
             if (orientation == null )
             {
@@ -56,21 +57,22 @@ namespace FPSController
 
         internal void OnSlideEnter()
         {
-            var forward = playerController.CalculateMovementVelocity().normalized;
-            rb.AddForce(forward * slideBoost, ForceMode.Impulse);
+            var forward = _playerController.CalculateMovementVelocity().normalized;
+            _rb.AddForce(forward * slideBoost, ForceMode.Impulse);
 
-            playerMover.SetIsCrouching(true);
-            rb.AddForce(-Vector3.up * 5f, ForceMode.Impulse);
+            _playerBody.SetIsCrouching(true);
+            _rb.AddForce(-Vector3.up * 5f, ForceMode.Impulse);
 
-            playerController.SetMaxSpeed(playerController.GetFlatVelocity(rb.velocity).magnitude);
+            _playerController.IsExitingClimb = false;
+            _playerController.SetMaxSpeed(_playerController.GetFlatVelocity(_rb.velocity).magnitude);
         }
 
         internal void OnSlideExit()
         {
-            playerMover.SetIsCrouching(false);
-            playerController.SetIsExitingCrouch(true);
+            _playerBody.SetIsCrouching(false);
+            _playerController.IsExitingCrouch = true;
 
-            playerController.StartCoyoteeTimer();
+            _playerController.StartCoyoteeTimer();
         }
 
         internal void OnSlideFixedUpdate()
@@ -80,11 +82,11 @@ namespace FPSController
 
         private void SlideOnSlope()
         {
-            var currentSlopeNormal = playerController.CurrentSlopeNormal;
+            var currentSlopeNormal = _playerController.CurrentSlopeNormal;
             if (currentSlopeNormal == Vector3.up)
                 return;
 
-            var movementSpeed = playerController.MovementSpeed; 
+            var movementSpeed = _playerController.MovementSpeed; 
 
             var horizontalDirection = Vector3.Cross(currentSlopeNormal, Vector3.up);       // "Right" direction on the slope, horizontal part of the slope
             var slopeDirection = Vector3.Cross(currentSlopeNormal, horizontalDirection);   // Direction of the slope (going down)
@@ -92,12 +94,12 @@ namespace FPSController
             var slopeAngle = Vector3.Angle(Vector3.up, currentSlopeNormal);
             var speedRatio = slopeAngle / 20f;
 
-            rb.AddForce(slopeDirection * movementSpeed * speedRatio, ForceMode.Impulse);
+            _rb.AddForce(slopeDirection * movementSpeed * speedRatio, ForceMode.Impulse);
         }
 
         public bool IsSliding()
         {
-            return (playerController.IsCrouchingKeyPressed || playerController.IsCrouchingKeyHeld) && (playerMover.IsGrounded() && (rb.velocity.magnitude > minimumSlideVelocity));
+            return (_playerController.IsCrouchingKeyPressed || _playerController.IsCrouchingKeyHeld) && (_playerBody.IsGrounded() && (_rb.velocity.magnitude > minimumSlideVelocity));
         }
 
         #endregion
