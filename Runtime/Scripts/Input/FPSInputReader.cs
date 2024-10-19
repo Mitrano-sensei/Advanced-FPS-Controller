@@ -13,6 +13,8 @@ namespace FPSController
         public event UnityAction<bool> Jump = delegate { };
         public event UnityAction<bool> Run = delegate { };
         public event UnityAction<bool> Crouch = delegate { };
+        public event UnityAction<bool> SpecialAction = delegate { };
+        public event UnityAction<bool> Interact = delegate { };
 
         FPSInputAction inputActions;
 
@@ -76,6 +78,32 @@ namespace FPSController
                     break;
                 case InputActionPhase.Canceled:
                     Crouch.Invoke(false);
+                    break;
+            }
+        }
+
+        public void OnSpecialAction(InputAction.CallbackContext context)
+        {
+            switch (context.phase)
+            {
+                case InputActionPhase.Performed:
+                    SpecialAction.Invoke(true);
+                    break;
+                case InputActionPhase.Canceled:
+                    SpecialAction.Invoke(false);
+                    break;
+            }
+        }
+
+        public void OnInteract(InputAction.CallbackContext context)
+        {
+            switch (context.phase)
+            {
+                case InputActionPhase.Performed:
+                    Interact.Invoke(true);
+                    break;
+                case InputActionPhase.Canceled:
+                    Interact.Invoke(false);
                     break;
             }
         }

@@ -33,7 +33,11 @@ namespace FPSController
 
             _playerController.JumpKeyIsLocked = true;
 
-            _rb.AddForce(Vector3.up * jumpForce, ForceMode.Impulse);
+            var jumpDirection = Vector3.up;
+            if (_playerController.IsExitingClimb)
+                jumpDirection += _playerController.LastWallNormal * .5f;
+
+            _rb.AddForce(jumpDirection.normalized * jumpForce, ForceMode.Impulse);
         }
 
         internal void OnJumpExit()

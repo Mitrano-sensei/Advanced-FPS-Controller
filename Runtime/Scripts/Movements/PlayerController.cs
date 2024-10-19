@@ -24,6 +24,7 @@ namespace FPSController
         [SerializeField] private JumpMovement jumpMovement;
         [SerializeField] private CrouchMovement crouchMovement;
 
+        private Rigidbody _rb;
 
         [Header("Movements")]
         [SerializeField] private float gravityScale = 1f;
@@ -32,8 +33,23 @@ namespace FPSController
 
         [SerializeField] private float groundDrag = 6f;
 
-        [Header("Jump")]
         [SerializeField] private float coyoteeTime = .3f;
+
+        internal void SetMaxSpeed(float v) => _currentMaxSpeed = v;
+        public float MovementSpeed { get => movementSpeed; }
+
+        public Vector3 CurrentSlopeNormal => _currentSlopeNormal;
+        public IState CurrentState => _stateMachine.CurrentState;
+
+        private StateMachine _stateMachine;
+        private Vector2 _moveInput;
+        private Vector3 _currentSlopeNormal;
+
+        internal float _currentMaxSpeed;
+        internal float _speedWhenChanged;
+        internal StopwatchTimer _changeStateTimer = new();
+
+        // Jump
 
         private bool _jumpKeyPressed;  // True the frame the jump key is pressed
         private bool _jumpKeyHeld;     // True while the jump key is held
@@ -43,15 +59,9 @@ namespace FPSController
         public bool JumpKeyPressed { get => _jumpKeyPressed; private set => _jumpKeyPressed = value; }
         public bool JumpKeyHeld { get => _jumpKeyHeld; private set => _jumpKeyHeld = value; }
         public bool JumpKeyReleased { get => _jumpKeyReleased; private set => _jumpKeyReleased = value; }
-
         public bool JumpKeyIsLocked { get => _jumpKeyIsLocked; internal set => _jumpKeyIsLocked = value; }
 
-
-        public Vector3 CurrentSlopeNormal => _currentSlopeNormal;
-        public IState CurrentState => _stateMachine.CurrentState;
-
-        internal void SetMaxSpeed(float v) => _currentMaxSpeed = v;
-        public float MovementSpeed { get => movementSpeed; }
+        // Crouch
 
         private bool _isCrouchingKeyPressed;
         private bool _isCrouchingKeyHeld;
@@ -67,22 +77,13 @@ namespace FPSController
         public bool IsExitingCrouch { get => _isExitingCrouch; set => _isExitingCrouch = value; }
         public bool IsExitingClimb { get => _isExitingClimb; set => _isExitingClimb = value; }
 
-        private StateMachine _stateMachine;
-        private Vector2 _moveInput;
-        private Vector3 _currentSlopeNormal;
+        private Vector3 _lastWallNormal;
 
-        internal float _currentMaxSpeed;
-        internal float _speedWhenChanged;
-        internal StopwatchTimer _changeStateTimer = new();
-
-        private Vector3 _movementInputLastFrame;
-        private Vector3 _velocityLastFrame;
+        public Vector3 LastWallNormal { get => _lastWallNormal; set => _lastWallNormal = value; }
 
         [Header("Debug")]
         [SerializeField] private bool debugMovement = true;
 
-        // Debug
-        private Rigidbody _rb;
 
         #endregion
 
@@ -269,9 +270,6 @@ namespace FPSController
             var movementInput = CalculateMovementVelocity();
             Vector3 velocity = movementInput * ratio;
             _rb.AddForce(velocity, ForceMode.Impulse);
-
-            _movementInputLastFrame = movementInput;
-            _velocityLastFrame = velocity;
         }
 
         private void HandleDrag()

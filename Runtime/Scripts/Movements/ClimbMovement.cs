@@ -28,6 +28,7 @@ namespace FPSController
         private float _wallLookAngle;
 
         private bool _isWallInFront;
+        private Vector3 _wallNormal;
 
         private void Awake()
         {
@@ -36,20 +37,31 @@ namespace FPSController
         }
 
         #region Check
-        public void WallCheck()
+        public void WallCheck(bool useExtended = false, bool useLastWall = false)
         {
-            _isWallInFront = Physics.SphereCast(transform.position, sphereCastRadius, orientation.forward, out _wallHit, detectionDistance, whatIsWall);
+            float extensionRatio = useExtended ? 1.4f : 1f;
+            Vector3 direction = useLastWall ? -_playerController.LastWallNormal : orientation.forward;
+
+            _isWallInFront = Physics.SphereCast(transform.position, sphereCastRadius, direction, out _wallHit, detectionDistance * extensionRatio, whatIsWall);
             _wallLookAngle = Vector3.Angle(orientation.forward, -_wallHit.normal);
+            _wallNormal = _wallHit.normal;
         }
 
         public bool IsClimbingEnter()
         {
-            return _isWallInFront && _wallLookAngle < maxWallLookAngle && (_playerController.JumpKeyPressed || _playerController.JumpKeyHeld) && !_playerController.IsExitingClimb;
+            bool isWallValid = _isWallInFront && _wallLookAngle < maxWallLookAngle;
+            bool isRequestedClimb = (_playerController.JumpKeyPressed || _playerController.JumpKeyHeld);
+            bool isClimbAllowed = (!_playerController.IsExitingClimb || _wallNormal != _playerController.LastWallNormal);
+
+            return isWallValid && isRequestedClimb && isClimbAllowed;
         }
 
         public bool IsClimbingExit()
         {
-            return _playerController.JumpKeyReleased || _climbTimer.IsFinished;
+            WallCheck(true, true);
+            bool isClimbingExit = _playerController.JumpKeyReleased || _climbTimer.IsFinished || !_isWallInFront;
+
+            return isClimbingExit;
         }
 
         #endregion
@@ -60,6 +72,8 @@ namespace FPSController
 
             _climbTimer.Reset(climbTimeInSeconds);
             _climbTimer.Start();
+
+            _playerController.LastWallNormal = _wallNormal;
         }
 
         public void OnClimbUpdate()
