@@ -1,12 +1,14 @@
+using System;
 using UnityEngine;
 using UnityEngine.Events;
 using UnityEngine.InputSystem;
+using Utilities;
 using static FPSInputAction;
 
 namespace FPSController
 {
-    [CreateAssetMenu(menuName = "FPS Controller/Input Reader")]
-    public class InputReader : ScriptableObject, IPlayerActions
+    [CreateAssetMenu(menuName = "FPS Controller/FPS Input Reader")]
+    public class FPSInputReader : ScriptableObject, IPlayerActions
     {
         public event UnityAction<Vector2> Move = delegate { };
         public event UnityAction<Vector2, bool> Look = delegate { }; // bool is true if the user is using the mouse, false for controller
@@ -18,7 +20,7 @@ namespace FPSController
 
         FPSInputAction inputActions;
 
-        public Vector3 Direction => inputActions.Player.Move.ReadValue<Vector2>();
+        public Vector3 Direction => inputActions.Player.Move.ReadValue<Vector2>().ClampMagnitude(1f);
 
         void OnEnable()
         {
@@ -29,6 +31,8 @@ namespace FPSController
 
             }
             inputActions.Enable();
+
+            Jump += HandleJumpInputs;
         }
 
         public void OnMove(InputAction.CallbackContext context)
@@ -107,5 +111,41 @@ namespace FPSController
                     break;
             }
         }
+
+
+        #region Jump Inputs
+
+        public bool JumpKeyPressed { get; private set; }
+        public bool JumpKeyReleased { get; private set; }
+        public bool JumpKeyHeld { get; private set; }
+        public bool JumpKeyIsLocked { get; private set; }
+
+        private void HandleJumpInputs(bool jumpKeyPressed)
+        {
+            if (jumpKeyPressed)
+            {
+                JumpKeyPressed = true;
+                JumpKeyHeld = true;
+            }
+            else
+            {
+                JumpKeyReleased = true;
+                JumpKeyHeld = false;
+                JumpKeyIsLocked = false;
+            }
+        }
+
+        public void UpdateJumpInputs()
+        {
+            JumpKeyPressed = false;
+            JumpKeyReleased = false;
+        }
+
+        public void LockJumpKey(bool doLock = true)
+        {
+            JumpKeyIsLocked = doLock;
+        }
+
+        #endregion
     }
 }

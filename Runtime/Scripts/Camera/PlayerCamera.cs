@@ -12,7 +12,7 @@ namespace FPSController
     public class PlayerCamera : MonoBehaviour
     {
         #region Fields
-        [SerializeField] private InputReader inputReader;
+        [SerializeField] private FPSInputReader inputReader;
 
         [SerializeField] private float sensX;
         [SerializeField] private float sensY;

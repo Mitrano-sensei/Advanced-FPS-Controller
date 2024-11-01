@@ -1,158 +1,61 @@
 using FiniteStateMachine;
 using System;
+using System.Collections.Generic;
 using UnityEngine;
-using Utilities;
-using static FPSController.ClimbMovement;
-using static FPSController.CrouchMovement;
-using static FPSController.GroundMovement;
-using static FPSController.JumpMovement;
-using static FPSController.SlideMovement;
+using UnityEngine.Serialization;
 
 namespace FPSController
 {
-    [RequireComponent(typeof(Rigidbody))]
     public class PlayerController : MonoBehaviour
     {
         #region Fields
-        [Header("References & Controls")]
-        [SerializeField] private PlayerBody playerBody;
+        [Header("References")]
+        [SerializeField] private FPSInputReader inputReader;
+        [SerializeField] private PlayerGroundChecker groundChecker;
+        [SerializeField] private Rigidbody rb;
         [SerializeField] private Transform orientation;
-        [SerializeField] private InputReader inputReader;
-        [SerializeField] private SlideMovement slideMovement;
-        [SerializeField] private ClimbMovement climbMovement;
-        [SerializeField] private GroundMovement groundMovement;
-        [SerializeField] private JumpMovement jumpMovement;
-        [SerializeField] private CrouchMovement crouchMovement;
 
-        private Rigidbody _rb;
+        [Header("States")]
+        [SerializeField] private GroundState groundState;
+        [SerializeField] private JumpingState jumpingState;
+        [SerializeField] private FallingState fallingState;
+        [SerializeField] private RisingState risingState;
+        [SerializeField] private ClimbingState climbingState;
 
-        [Header("Movements")]
-        [SerializeField] private float gravityScale = 1f;
-        [SerializeField] private float movementSpeed = 5f;
-        [SerializeField] private float timeToChangeSpeedInSeconds = 1f;
-
-        [SerializeField] private float groundDrag = 6f;
-
-        [SerializeField] private float coyoteeTime = .3f;
-
-        internal void SetMaxSpeed(float v) => _currentMaxSpeed = v;
-        public float MovementSpeed { get => movementSpeed; }
-
-        public Vector3 CurrentSlopeNormal => _currentSlopeNormal;
-        public IState CurrentState => _stateMachine.CurrentState;
-
+        // State Machine
         private StateMachine _stateMachine;
-        private Vector2 _moveInput;
-        private Vector3 _currentSlopeNormal;
 
-        internal float _currentMaxSpeed;
-        internal float _speedWhenChanged;
-        internal StopwatchTimer _changeStateTimer = new();
-
-        // Jump
-
-        private bool _jumpKeyPressed;  // True the frame the jump key is pressed
-        private bool _jumpKeyHeld;     // True while the jump key is held
-        private bool _jumpKeyReleased; // True the frame the jump key is released
-        private bool _jumpKeyIsLocked; // To prevent multiple jumps same frame
-
-        public bool JumpKeyPressed { get => _jumpKeyPressed; private set => _jumpKeyPressed = value; }
-        public bool JumpKeyHeld { get => _jumpKeyHeld; private set => _jumpKeyHeld = value; }
-        public bool JumpKeyReleased { get => _jumpKeyReleased; private set => _jumpKeyReleased = value; }
-        public bool JumpKeyIsLocked { get => _jumpKeyIsLocked; internal set => _jumpKeyIsLocked = value; }
-
-        // Crouch
-
-        private bool _isCrouchingKeyPressed;
-        private bool _isCrouchingKeyHeld;
-        private bool _isCrouchingKeyReleased;
-
-        public bool IsCrouchingKeyPressed { get => _isCrouchingKeyPressed; private set => _isCrouchingKeyPressed = value; }
-        public bool IsCrouchingKeyHeld { get => _isCrouchingKeyHeld; private set => _isCrouchingKeyHeld = value; }
-        public bool IsCrouchingKeyReleased { get => _isCrouchingKeyReleased; private set => _isCrouchingKeyReleased = value; }
-
-        private bool _isExitingCrouch;
-        private bool _isExitingClimb;
-
-        public bool IsExitingCrouch { get => _isExitingCrouch; set => _isExitingCrouch = value; }
-        public bool IsExitingClimb { get => _isExitingClimb; set => _isExitingClimb = value; }
-
-        private Vector3 _lastWallNormal;
-
-        public Vector3 LastWallNormal { get => _lastWallNormal; set => _lastWallNormal = value; }
-
-        [Header("Debug")]
-        [SerializeField] private bool debugMovement = true;
-
+        public IState CurrentState => _stateMachine.CurrentState;
+        public IFPSState CurrentFPSState => (IFPSState)CurrentState;
 
         #endregion
 
         #region MonoBehaviour
+        void Awake()
+        {
+            if (inputReader == null) Debug.LogError("InputReader is not assigned in PlayerController");
+            if (groundChecker == null) Debug.LogError("GroundChecker is not assigned in PlayerController");
+            if (rb == null) Debug.LogError("Rigidbody not assigned in PlayerController");
+        }
+
         void Start()
         {
+            InitStates();
             SetupStateMachine();
-
-            SetupRigidbody();
-
-            UpdateTimers();
-
-            inputReader.Move += input => _moveInput = input.magnitude > 1f ? input.normalized : input;
-            inputReader.Jump += b => HandleJumpKeyInput(b);
-            inputReader.Crouch += b => HandleCrouchKeyInput(b);
         }
 
         void Update()
         {
             _stateMachine.Update();
-            TickTimers();
 
-            climbMovement.WallCheck();
-
-            // Debug
-            if (Input.GetKeyDown(KeyCode.G))
-            {
-                Debug.Log("Drag : " + _rb.drag);
-            }
+            inputReader.UpdateJumpInputs();
         }
 
         void FixedUpdate()
         {
             _stateMachine.FixedUpdate();
-            CalculateSlope();
 
-            HandleGravity();
-            AdjustToGround();
-
-            HandleSpeedLimit();
-            HandleDrag();
-
-            ResetJumpKeys();
-            ResetCrouchKeys();
-        }
-
-        private void OnValidate()
-        {
-            if (Application.isPlaying && _coyoteeTimer != null && coyoteeTime != _coyoteeTimer.GetInitialTime())
-                UpdateTimers();
-        }
-
-        private void OnDrawGizmos()
-        {
-            if (debugMovement)
-            {
-                Gizmos.color = Color.blue;
-                Gizmos.DrawRay(transform.position, _currentSlopeNormal * 3f);
-
-                var forward = Vector3.ProjectOnPlane(orientation.forward, _currentSlopeNormal).normalized;
-                var right = Vector3.ProjectOnPlane(orientation.right, _currentSlopeNormal).normalized;
-
-                Gizmos.color = Color.red;
-                Gizmos.DrawRay(transform.position, forward * 3f);
-                Gizmos.DrawRay(transform.position, right * 3f);
-
-                Gizmos.color = Color.green;
-                Gizmos.DrawRay(transform.position + Vector3.up, forward * _moveInput.y + right * _moveInput.x);
-            }
+            HandleCurrentState();
         }
 
         #endregion
@@ -160,251 +63,93 @@ namespace FPSController
         #region StateMachine
         private void SetupStateMachine()
         {
-            _stateMachine = new StateMachine();
+            _stateMachine = new();
 
-            var groundedState = new GroundedState(this, groundMovement);
-            var jumpingState = new JumpingState(this, jumpMovement);
-            var fallingState = new FallingState(this);
-            var risingState = new RisingState(this);
-            var crouchingState = new CrouchingState(this, crouchMovement);
-            var slidingState = new SlidingState(this, slideMovement);
-            var climbingState = new ClimbingState(this, climbMovement);
+            At(fallingState, groundState, () => groundChecker.IsGrounded);
 
-            At(fallingState, groundedState, () => playerBody.IsGrounded());
-            At(groundedState, fallingState, () => !playerBody.IsGrounded() && _rb.velocity.y <= 0f);
-            At(groundedState, risingState, () => !playerBody.IsGrounded() && _rb.velocity.y > 0f);
-            At(risingState, fallingState, () => !playerBody.IsGrounded() && _rb.velocity.y <= 0f);
-            At(risingState, groundedState, () => playerBody.IsGrounded());
+            At(groundState, fallingState, () => !groundChecker.IsGrounded && rb.velocity.y <= 0f);
+            At(groundState, risingState, () => !groundChecker.IsGrounded && rb.velocity.y > 0f);
 
-            At(groundedState, jumpingState, jumpMovement.IsEnteringJump);
-            At(fallingState, jumpingState, jumpMovement.IsEnteringJump);
-            At(jumpingState, fallingState, () => _rb.velocity.y < 0f);
-            At(jumpingState, risingState, () => _rb.velocity.y > 0f && _jumpKeyReleased);
+            At(risingState, fallingState, () => !groundChecker.IsGrounded && rb.velocity.y < 0f);
+            At(risingState, groundState, () => groundChecker.IsGrounded);
 
-            At(groundedState, slidingState, () => slideMovement.IsSliding());
-            At(slidingState, crouchingState, () => !slideMovement.IsSliding() && crouchMovement.IsCrouching());
-            At(slidingState, groundedState, () => !slideMovement.IsSliding() && playerBody.IsGrounded() && !crouchMovement.IsCrouching());
-            At(slidingState, jumpingState, jumpMovement.IsEnteringJump);
-            At(slidingState, fallingState, () => !playerBody.IsGrounded() && _rb.velocity.y <= 0f);
-            At(slidingState, risingState, () => !playerBody.IsGrounded() && _rb.velocity.y > 0f);
+            At(groundState, jumpingState, () => jumpingState.IsJumpingEnter());
 
-            At(groundedState, crouchingState, () => crouchMovement.IsCrouching() && !slideMovement.IsSliding());
-            At(crouchingState, groundedState, () => _isCrouchingKeyReleased);
-            At(crouchingState, fallingState, () => !playerBody.IsGrounded() && _rb.velocity.y <= 0f);
-            At(crouchingState, risingState, () => !playerBody.IsGrounded() && _rb.velocity.y > 0f);
-            At(crouchingState, jumpingState, jumpMovement.IsEnteringJump);
+            At(jumpingState, groundState, () => groundChecker.IsGrounded && !inputReader.JumpKeyIsLocked);
+            At(jumpingState, risingState, () => jumpingState.IsJumpingExit() && rb.velocity.y > 0f);
+            At(jumpingState, fallingState, () => rb.velocity.y < 0f);
 
-            At(jumpingState, climbingState, climbMovement.IsClimbingEnter);
-            At(risingState, climbingState, climbMovement.IsClimbingEnter);
-            At(fallingState, climbingState, climbMovement.IsClimbingEnter);
-            At(climbingState, fallingState, climbMovement.IsClimbingExit);
+            At(fallingState, jumpingState, () => jumpingState.IsJumpingEnter());
             
+            At(jumpingState, climbingState, () => climbingState.IsClimbingEnter());
+            At(risingState, climbingState, () => climbingState.IsClimbingEnter());
+            At(fallingState, climbingState, () => climbingState.IsClimbingEnter());
+
+            At(climbingState, risingState, () => climbingState.IsClimbingExit());
+
             _stateMachine.SetState(fallingState);
         }
 
         void At(IState from, IState to, Func<bool> condition) => _stateMachine.AddTransition(from, to, new FuncPredicate(condition));
 
+        private void InitStates()
+        {
+            List<IFPSState> states = new List<IFPSState>() { groundState, jumpingState, risingState, fallingState, climbingState };
+
+            foreach (var state in states)
+            {
+                state.SetPlayerController(this);
+                state.SetRigidbody(rb);
+                state.SetGroundChecker(groundChecker);
+                state.SetInputReader(inputReader);
+            }
+        }
         #endregion
 
-        #region Jump
-
-        private CountdownTimer _coyoteeTimer;
-
-        private void HandleJumpKeyInput(bool isJumpKeyPressed)
+        private void HandleCurrentState()
         {
-            if (isJumpKeyPressed)
-            {
-                _jumpKeyPressed = true;
-                _jumpKeyHeld = true;
-            }
-            else
-            {
-                _jumpKeyReleased = true;
-                _jumpKeyHeld = false;
-            }
+            CurrentFPSState.HandleGravity();
+            rb.drag = CurrentFPSState.GetDrag();
+            CurrentFPSState.HandleMovementInputs();
+            CurrentFPSState.HandleLimitSpeed();
         }
 
-        /**
-         * Called at the end of the frame, to reset jump key inputs.
-         */
-        private void ResetJumpKeys()
-        {
-            _jumpKeyPressed = false;
-            _jumpKeyReleased = false;
-            _jumpKeyIsLocked = false;
-        }
-
-        public void StartCoyoteeTimer() => _coyoteeTimer.Start();
-
-        #endregion
-
-        #region Crouch & Slide        
-
-        private void HandleCrouchKeyInput(bool isCrouchKeyPressed)
-        {
-            if (isCrouchKeyPressed)
-            {
-                _isCrouchingKeyPressed = true;
-                _isCrouchingKeyHeld = true;
-            }
-            else
-            {
-                _isCrouchingKeyReleased = true;
-                _isCrouchingKeyHeld = false;
-            }
-        }
-
-        private void ResetCrouchKeys()
-        {
-            _isCrouchingKeyPressed = false;
-            _isCrouchingKeyReleased = false;
-        }
-
-        #endregion
-
-        #region Movement Control
-        public float GetCurrentMaxSpeed() => _currentMaxSpeed;
-
-        internal void CalculateVelocity(float ratio = 1f)
-        {
-            var movementInput = CalculateMovementVelocity();
-            Vector3 velocity = movementInput * ratio;
-            _rb.AddForce(velocity, ForceMode.Impulse);
-        }
-
-        private void HandleDrag()
-        {
-            if (!playerBody.IsGrounded())
-            {
-                _rb.drag = 0;
-                return;
-            }
-
-            if (CurrentState is SlidingState)
-                _rb.drag = slideMovement.SlideDragRatio * groundDrag;
-            else
-                _rb.drag = groundDrag;
-        }
-
-        private void HandleSpeedLimit()
-        {
-            var state = (CurrentState as IFPSState);
-
-            if (state == null) Debug.LogError("Current State " + CurrentState.Name + " is not an IFPSState");
-            if (!state.IsLimitedSpeed())
-                return;
-
-            Vector3 velocity = _rb.velocity;
-            Vector3 flatVelocity = GetFlatVelocity(velocity);
-            float verticalVelocity = Vector3.Dot(velocity, _currentSlopeNormal.normalized);
-
-            if (flatVelocity.magnitude > _currentMaxSpeed)
-            {
-                var currentSpeed = Mathf.Lerp(_speedWhenChanged, _currentMaxSpeed, _changeStateTimer.GetCurrentTime() / (timeToChangeSpeedInSeconds * (_moveInput.magnitude + .05f)));
-                if (Mathf.Abs(currentSpeed - _currentMaxSpeed) < .05f)
-                    currentSpeed = _currentMaxSpeed;
-
-                _rb.ApplyVelocity(flatVelocity.normalized * currentSpeed + verticalVelocity * _currentSlopeNormal.normalized);
-            }
-        }
-
-        /**
-         * Gets Velocity, not taking account vertical velocity, and taking slopes into accounts
-         */
-        public Vector3 GetFlatVelocity(Vector3 velocity)
-        {
-            // FIXME : Should be in playerMover ?
-            Vector3 flatVelocity = velocity.RemoveDotVector(_currentSlopeNormal);
-
-            return flatVelocity;
-        }
-
-        private void AdjustToGround()
-        {
-            if (!playerBody.IsGrounded())
-                return;
-
-            _rb.ApplyVelocity(_rb.velocity + CalculateGroundAdjustmentVelocity());
-        }
-
-        internal bool IsCoyoteeJumpAllowed()
-        {
-            return _coyoteeTimer.IsRunning && _jumpKeyPressed && !_jumpKeyIsLocked && CurrentState is FallingState;
-
-        }
-
-        private Vector3 CalculateGroundAdjustmentVelocity()
-        {
-            if (CurrentState is not GroundedState)
-            {
-                return Vector3.zero;
-            }
-
-            return playerBody.GetGroundAdjustmentVelocity();
-        }
-
-        public Vector3 CalculateMovementVelocity()
-        {
-            var forward = Vector3.ProjectOnPlane(orientation.forward, _currentSlopeNormal).normalized;
-            var right = Vector3.ProjectOnPlane(orientation.right, _currentSlopeNormal).normalized;
-
-            return forward * _moveInput.y * movementSpeed + right * _moveInput.x * movementSpeed;
-        }
-
-        private void CalculateSlope()
-        {
-            _currentSlopeNormal = playerBody.GetSlopeNormal();
-        }
-
-        private void HandleGravity()
-        {
-            if (playerBody.IsGrounded())
-                return;
-
-            _rb.AddForce(Vector3.down * gravityScale, ForceMode.Impulse);
-        }
-
-        internal void SetupLerpToDefaultMoveSpeed()
-        {
-            // Handle Speed On Change State
-            _changeStateTimer.Reset();
-            _changeStateTimer.Start();
-            _speedWhenChanged = GetFlatVelocity(_rb.velocity).magnitude;
-
-            _currentMaxSpeed = movementSpeed;
-        }
-
-        #endregion
-
-        #region Setup
-        private void SetupRigidbody()
-        {
-            if (_rb == null)
-                _rb = GetComponent<Rigidbody>();
-
-            _rb.useGravity = false;
-            _rb.freezeRotation = true;
-        }
-
-        private void TickTimers()
-        {
-            _coyoteeTimer.Tick(Time.deltaTime);
-            _changeStateTimer.Tick(Time.deltaTime);
-        }
-
-        private void UpdateTimers()
-        {
-            _coyoteeTimer = new CountdownTimer(coyoteeTime);
-        }
-        #endregion
-        
         #region Debug
+
         public void PrintState()
         {
             Debug.Log("Current State : " + CurrentState.Name);
         }
-
-        
         #endregion
+    }
+
+    public interface IFPSState : IState
+    {
+        void SetPlayerController(PlayerController playerController);
+        void SetRigidbody(Rigidbody rb);
+        void SetGroundChecker(PlayerGroundChecker groundChecker);
+        void SetInputReader(FPSInputReader inputReader);
+
+        /**
+         * Gets the drag that should be set for sthe rigidbody
+         */
+        float GetDrag();
+        
+        // Movement State Loop : The following implementations of the Current State will be called in PlayerController.FixedUpdate
+        
+        /**
+         * Handle Gravity. Base Rigidbody gravity should be turned off
+         */
+        void HandleGravity();
+        
+        /**
+         * Handles the movements following the direction inputs of the player. Note that inputs corresponding to complex moves as jump impulse or wall sticking should be handled in the state
+         */
+        void HandleMovementInputs() {}
+        
+        /**
+         * Handles the limitation of the player's speed.
+         */
+        void HandleLimitSpeed() {}
     }
 }
