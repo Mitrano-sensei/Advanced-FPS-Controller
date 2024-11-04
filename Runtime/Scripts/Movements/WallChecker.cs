@@ -123,6 +123,7 @@ namespace FPSController
             
             _rightWallAngle = Vector3.Angle(orientation.forward, -hit.normal); // From FORWARD to Wall
             _rightWallDistance = hit.distance;
+            _rightWallNormal = hit.normal;
         }
 
         /**
@@ -138,6 +139,30 @@ namespace FPSController
             
             _leftWallAngle = Vector3.Angle(orientation.forward, -hit.normal); // From FORWARD to Wall
             _leftWallDistance = hit.distance;
+            _leftWallNormal = hit.normal;
         }
+
+        #region Debug
+
+        public void DrawDebugSideRays(float minAngle, float maxAngle)
+        {
+            // Right wall
+            Gizmos.color = IsRightWall ? Color.green : Color.blue;
+            var minAngleRight = Quaternion.AngleAxis(minAngle, Vector3.up) * orientation.forward;
+            var maxAngleRight = Quaternion.AngleAxis(maxAngle, Vector3.up) * orientation.forward;
+            
+            Gizmos.DrawRay(origin.position, minAngleRight * rightWallCheckDistance);
+            Gizmos.DrawRay(origin.position, maxAngleRight * rightWallCheckDistance);
+            
+            // Left wall
+            Gizmos.color = IsLeftWall ? Color.green : Color.blue;
+            var minAngleLeft = Quaternion.AngleAxis(-minAngle, Vector3.up) * orientation.forward;
+            var maxAngleLeft = Quaternion.AngleAxis(-maxAngle, Vector3.up) * orientation.forward;
+            
+            Gizmos.DrawRay(origin.position, minAngleLeft * rightWallCheckDistance);
+            Gizmos.DrawRay(origin.position, maxAngleLeft * rightWallCheckDistance);
+        }
+
+        #endregion
     }
 }

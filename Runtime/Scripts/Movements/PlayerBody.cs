@@ -1,10 +1,9 @@
 ﻿using UnityEngine;
 using UnityEngine.Events;
-using UnityEngine.UIElements;
 
 namespace FPSController
 {
-    public class PlayerGroundChecker : MonoBehaviour
+    public class PlayerBody : MonoBehaviour
     {
         [Header("References")]
         [SerializeField] private CapsuleCollider capsule;   // The player's collider
@@ -12,15 +11,23 @@ namespace FPSController
         [Space]
 
         [Header("Player Ground Checker Settings")]
-        [SerializeField] private float bodyHeight = 1f;     // The height of the player's body, excluding the legs
-        [SerializeField] private float legsHeight = .5f;    // The distance between the player's body and the ground
-        [SerializeField] private float bodyRadius = .25f;   // The radius of the players body  
+        [SerializeField] private float bodyHeight = 1f;         // The height of the player's body, including the legs
+        [SerializeField] private float legsHeightRatio = .5f;   // The ratio of the legs height compared to the body height
+        [SerializeField] private float bodyRadius = .25f;       // The radius of the players body  
         [Space]
-        [SerializeField] private LayerMask groundLayer;     // The layer that represents the ground
+        [SerializeField] private LayerMask groundLayer;         // The layer that represents the ground
         [Space]
         [SerializeField] private float extendedGroundCheckRatio = 1.1f;
         [Space]
         [SerializeField] private float maxSlopeAngle = 40f;
+        [Space] 
+        [SerializeField] private float crouchModeRatio = .5f;
+
+        
+        public float BodyHeight => IsCrouching ? bodyHeight * crouchModeRatio : bodyHeight;
+        public float LegsHeight => BodyHeight * legsHeightRatio;
+
+        public bool IsCrouching { get; private set; }
 
         private RaycastHit _hit;
 
@@ -33,6 +40,11 @@ namespace FPSController
 
         public Vector3 Forward => CurrentSlopeNormal == Vector3.up ? orientation.forward : Vector3.ProjectOnPlane(orientation.forward, CurrentSlopeNormal).normalized;
         public Vector3 Right => CurrentSlopeNormal == Vector3.up ? orientation.right : Vector3.ProjectOnPlane(orientation.right, CurrentSlopeNormal).normalized;
+        
+        public Vector3 SlopeDirection => CurrentSlopeNormal == Vector3.up ? Vector3.zero : Vector3.ProjectOnPlane(Vector3.down, CurrentSlopeNormal).normalized;
+        public float CurrentSlopeAngle => Vector3.Angle(Vector3.up, CurrentSlopeNormal);
+        public float MaxSlopeAngle => maxSlopeAngle;
+        
 
         void FixedUpdate()
         {
@@ -47,15 +59,18 @@ namespace FPSController
                 Debug.LogWarning("Capsule Collider not assigned, automatically assigned to the component.");
             }
 
-            capsule.height = bodyHeight;
+            capsule.height = BodyHeight * (1f - legsHeightRatio);
+            capsule.center = new Vector3(0, LegsHeight + capsule.height * .5f, 0);
             capsule.radius = bodyRadius;
-            capsule.center = new Vector3(0, legsHeight + bodyHeight*.5f, 0);
         }
 
         void OnDrawGizmos()
         {
             Gizmos.color = IsGrounded ? Color.green : Color.blue;
-            Gizmos.DrawLine(transform.position + capsule.center, transform.position + capsule.center + Vector3.down * (legsHeight + bodyHeight*.5f));
+            Gizmos.DrawLine(transform.position + capsule.center, transform.position + capsule.center + Vector3.down * (LegsHeight + capsule.height*.5f));
+            
+            Gizmos.color = Color.red;
+            Gizmos.DrawLine(transform.position, transform.position + SlopeDirection);
         }
 
         private void CheckGround(bool useExtendedGroundCheck)
@@ -64,9 +79,9 @@ namespace FPSController
 
             Vector3 origin = transform.position + capsule.center;
             Vector3 direction = Vector3.down;
-            float distance = legsHeight + bodyHeight*.5f;
+            float distance = LegsHeight + capsule.height*.5f;
 
-            if (useExtendedGroundCheck) distance *= extendedGroundCheckRatio;
+            if (useExtendedGroundCheck) distance *= extendedGroundCheckRatio * (IsCrouching ? 2f : 1f);
 
             IsGrounded = Physics.Raycast(origin, direction, out _hit, distance, groundLayer);
             CurrentSlopeNormal = _hit.collider != null ? _hit.normal : Vector3.up;
@@ -90,9 +105,18 @@ namespace FPSController
                 return 0;
 
             var distance = _hit.distance;
-            var delta = (legsHeight + bodyHeight * .5f) - distance;
+            var rayDistance = (LegsHeight + capsule.height * .5f);
+            var delta = rayDistance - distance;
 
             return delta;
+        }
+
+        public void SetCrouchMode(bool isCrouching)
+        {
+            IsCrouching = isCrouching;
+            
+            capsule.height = BodyHeight;
+            capsule.center = new Vector3(0, LegsHeight + capsule.height * .5f, 0);
         }
     }
 }

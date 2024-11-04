@@ -13,7 +13,7 @@ namespace FPSController
         [SerializeField] private float airMovementSpeed = 5f;
         [SerializeField, Range(0f, 1f)] private float airControl = .8f;
 
-        private PlayerGroundChecker _groundChecker;
+        private PlayerBody _body;
         private Rigidbody _rb;
         private PlayerController _playerController;
         private FPSInputReader _inputReader;
@@ -33,7 +33,7 @@ namespace FPSController
         {
             Debug.Log("On Falling Enter");
 
-            _groundChecker.UseExtendedGroundCheck = false;
+            _body.UseExtendedGroundCheck = false;
         }
 
         public void OnExit()
@@ -46,9 +46,9 @@ namespace FPSController
 
         #region Setup
 
-        public void SetGroundChecker(PlayerGroundChecker groundChecker)
+        public void SetPlayerBody(PlayerBody body)
         {
-            _groundChecker = groundChecker;
+            _body = body;
         }
 
         public void SetPlayerController(PlayerController playerController)
@@ -70,7 +70,7 @@ namespace FPSController
         public void HandleMovementInputs()
         {
             var input = _inputReader.Direction;
-            var direction = _groundChecker.Forward * input.y + _groundChecker.Right * input.x;
+            var direction = _body.Forward * input.y + _body.Right * input.x;
             var movement = direction * (airControl * airMovementSpeed);
             
             _rb.AddForce(movement, ForceMode.VelocityChange);

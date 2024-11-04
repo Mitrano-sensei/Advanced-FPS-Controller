@@ -6,36 +6,45 @@ namespace FPSController
 {
     public class JumpingState : MonoBehaviour, IFPSState
     {
-        [Header("Jump Settings")]
-        [SerializeField] private float jumpForce = 5f;
+        [Header("References")] [SerializeField]
+        private WallRunState wallRunState;
+
+        private PlayerController _playerController;
+        private Rigidbody _rb;
+        private PlayerBody _body;
+        private FPSInputReader _inputReader;
+
+        [Header("Jump Settings")] [SerializeField]
+        private float jumpForce = 5f;
+
         [SerializeField] private float gravityMultiplier = 1f;
         [SerializeField] private float drag = 0f;
-        [Space]
+        [Space] 
         [SerializeField] private float coyoteeTimeInSeconds;
 
         [Space] 
         [SerializeField] private float airMovementSpeed = 5f;
         [SerializeField, Range(0f, 1f)] private float airControl = .8f;
 
-        private PlayerController _playerController;
-        private Rigidbody _rb;
-        private PlayerGroundChecker _groundChecker;
-        private FPSInputReader _inputReader;
-
         private CountdownTimer _coyoteeTimer;
 
         public string Name => "Jumping State";
+
+        #region MonoBehaviour
 
         private void Start()
         {
             _coyoteeTimer = new CountdownTimer(coyoteeTimeInSeconds);
 
-            _groundChecker.OnGroundLost += StartCoyoteeTimer;
+            _body.OnGroundLost += StartCoyoteeTimer;
+            
+            if (wallRunState == null)
+                Debug.Log("INFO : Wall Run State is not assigned in JumpingState");
         }
 
-        private void OnValidate()
-        {
-        }
+        #endregion
+
+        #region State
 
         public void OnStateFixedUpdate()
         {
@@ -53,11 +62,14 @@ namespace FPSController
 
         public void OnEnter()
         {
-            _rb.ApplyVerticalVelocity(jumpForce);
-
             _inputReader.LockJumpKey();
-            
             StopCoyoteeTimer();
+
+            if (wallRunState == null || !wallRunState.WallRunFlag)
+                HandleDefaultJump();
+            else
+                HandleWallJump();
+
 
             Debug.Log("Jumping OnEnter");
         }
@@ -67,6 +79,10 @@ namespace FPSController
             if (_rb.velocity.y > 0)
                 _rb.ApplyVerticalVelocity(_rb.velocity.y * .5f);
         }
+
+        #endregion
+
+
 
         #region Setup
 
@@ -80,26 +96,28 @@ namespace FPSController
             _rb = rb;
         }
 
-        public void SetGroundChecker(PlayerGroundChecker groundChecker)
+        public void SetPlayerBody(PlayerBody body)
         {
-            _groundChecker = groundChecker;
+            _body = body;
         }
 
         public void SetInputReader(FPSInputReader inputReader)
         {
             _inputReader = inputReader;
         }
+
         #endregion
 
         #region Check
 
         public bool IsJumpingEnter()
         {
-            var classicJump = _groundChecker.IsGrounded;
+            var classicJump = _body.IsGrounded;
             var jumpInput = (_inputReader.JumpKeyPressed || _inputReader.JumpKeyHeld) && !_inputReader.JumpKeyIsLocked;
             var coyoteeJump = _coyoteeTimer.IsRunning;
+            var wallJump = wallRunState != null && wallRunState.WallRunFlag;
 
-            return jumpInput && (classicJump || coyoteeJump);
+            return jumpInput && (classicJump || coyoteeJump || wallJump);
         }
 
         public bool IsJumpingExit()
@@ -123,9 +141,9 @@ namespace FPSController
         public void HandleMovementInputs()
         {
             var input = _inputReader.Direction;
-            var direction = _groundChecker.Forward * input.y + _groundChecker.Right * input.x;
+            var direction = _body.Forward * input.y + _body.Right * input.x;
             var movement = direction * (airControl * airMovementSpeed);
-            
+
             _rb.AddForce(movement, ForceMode.VelocityChange);
         }
 
@@ -133,7 +151,7 @@ namespace FPSController
         {
             Vector3 flatVelocity = _rb.velocity.WithY(0);
             float flatSpeed = flatVelocity.magnitude;
-            
+
             if (flatSpeed > airMovementSpeed)
                 _rb.velocity = flatVelocity.normalized * airMovementSpeed + Vector3.up * _rb.velocity.y;
         }
@@ -141,6 +159,17 @@ namespace FPSController
         public float GetDrag()
         {
             return drag;
+        }
+
+        private void HandleDefaultJump()
+        {
+            _rb.ApplyVerticalVelocity(jumpForce);
+        }
+
+        private void HandleWallJump()
+        {
+            _rb.ApplyVerticalVelocity(jumpForce);
+            _rb.AddForce(wallRunState.GetNormal() * jumpForce, ForceMode.Impulse);
         }
     }
 }

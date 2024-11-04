@@ -2,7 +2,6 @@ using FiniteStateMachine;
 using System;
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.Serialization;
 
 namespace FPSController
 {
@@ -11,7 +10,7 @@ namespace FPSController
         #region Fields
         [Header("References")]
         [SerializeField] private FPSInputReader inputReader;
-        [SerializeField] private PlayerGroundChecker groundChecker;
+        [SerializeField] private PlayerBody playerBody;
         [SerializeField] private Rigidbody rb;
         [SerializeField] private Transform orientation;
 
@@ -21,10 +20,14 @@ namespace FPSController
         [SerializeField] private FallingState fallingState;
         [SerializeField] private RisingState risingState;
         [SerializeField] private ClimbingState climbingState;
+        [SerializeField] private WallRunState wallRunState;
+        [SerializeField] private SlideState slideState;
 
         // State Machine
         private StateMachine _stateMachine;
 
+        public Action<IFPSState> OnStateChange = delegate {};
+        
         public IState CurrentState => _stateMachine.CurrentState;
         public IFPSState CurrentFPSState => (IFPSState)CurrentState;
 
@@ -34,13 +37,14 @@ namespace FPSController
         void Awake()
         {
             if (inputReader == null) Debug.LogError("InputReader is not assigned in PlayerController");
-            if (groundChecker == null) Debug.LogError("GroundChecker is not assigned in PlayerController");
+            if (playerBody == null) Debug.LogError("GroundChecker is not assigned in PlayerController");
             if (rb == null) Debug.LogError("Rigidbody not assigned in PlayerController");
+            
+            InitStates();
         }
 
         void Start()
         {
-            InitStates();
             SetupStateMachine();
         }
 
@@ -49,6 +53,7 @@ namespace FPSController
             _stateMachine.Update();
 
             inputReader.UpdateJumpInputs();
+            inputReader.UpdateCrouchInputs();
         }
 
         void FixedUpdate()
@@ -65,17 +70,17 @@ namespace FPSController
         {
             _stateMachine = new();
 
-            At(fallingState, groundState, () => groundChecker.IsGrounded);
+            At(fallingState, groundState, () => playerBody.IsGrounded);
 
-            At(groundState, fallingState, () => !groundChecker.IsGrounded && rb.velocity.y <= 0f);
-            At(groundState, risingState, () => !groundChecker.IsGrounded && rb.velocity.y > 0f);
+            At(groundState, fallingState, () => !playerBody.IsGrounded && rb.velocity.y <= 0f);
+            At(groundState, risingState, () => !playerBody.IsGrounded && rb.velocity.y > 0f);
 
-            At(risingState, fallingState, () => !groundChecker.IsGrounded && rb.velocity.y < 0f);
-            At(risingState, groundState, () => groundChecker.IsGrounded);
+            At(risingState, fallingState, () => !playerBody.IsGrounded && rb.velocity.y < 0f);
+            At(risingState, groundState, () => playerBody.IsGrounded);
 
             At(groundState, jumpingState, () => jumpingState.IsJumpingEnter());
 
-            At(jumpingState, groundState, () => groundChecker.IsGrounded && !inputReader.JumpKeyIsLocked);
+            At(jumpingState, groundState, () => playerBody.IsGrounded && !inputReader.JumpKeyIsLocked);
             At(jumpingState, risingState, () => jumpingState.IsJumpingExit() && rb.velocity.y > 0f);
             At(jumpingState, fallingState, () => rb.velocity.y < 0f);
 
@@ -86,21 +91,33 @@ namespace FPSController
             At(fallingState, climbingState, () => climbingState.IsClimbingEnter());
 
             At(climbingState, risingState, () => climbingState.IsClimbingExit());
+            
+            At(jumpingState, wallRunState, () => wallRunState.IsWallRunEnter());
+            At(risingState, wallRunState, () => wallRunState.IsWallRunEnter());
+            At(fallingState, wallRunState, () => wallRunState.IsWallRunEnter());
+            
+            At(wallRunState, fallingState, () => wallRunState.IsWallRunExit());
+            At(wallRunState, jumpingState, () => jumpingState.IsJumpingEnter());
+            
+            At(groundState, slideState, () => slideState.IsSlideEnter());
+            At(slideState, groundState, () => slideState.IsSlideExit());
 
             _stateMachine.SetState(fallingState);
+            
+            _stateMachine.OnStateChanged += state => OnStateChange((IFPSState)state);
         }
 
         void At(IState from, IState to, Func<bool> condition) => _stateMachine.AddTransition(from, to, new FuncPredicate(condition));
 
         private void InitStates()
         {
-            List<IFPSState> states = new List<IFPSState>() { groundState, jumpingState, risingState, fallingState, climbingState };
+            List<IFPSState> states = new List<IFPSState>() { groundState, jumpingState, risingState, fallingState, climbingState, wallRunState, slideState };
 
             foreach (var state in states)
             {
                 state.SetPlayerController(this);
                 state.SetRigidbody(rb);
-                state.SetGroundChecker(groundChecker);
+                state.SetPlayerBody(playerBody);
                 state.SetInputReader(inputReader);
             }
         }
@@ -127,7 +144,7 @@ namespace FPSController
     {
         void SetPlayerController(PlayerController playerController);
         void SetRigidbody(Rigidbody rb);
-        void SetGroundChecker(PlayerGroundChecker groundChecker);
+        void SetPlayerBody(PlayerBody playerBody);
         void SetInputReader(FPSInputReader inputReader);
 
         /**

@@ -12,12 +12,13 @@ namespace FPSController
 
         private PlayerController _playerController;
         private Rigidbody _rb;
-        private PlayerGroundChecker _groundChecker;
+        private PlayerBody _body;
         private FPSInputReader _inputReader;
 
         public string Name => "Grounded State";
 
 
+        #region State
         public void OnStateUpdate()
         {
         }
@@ -31,8 +32,8 @@ namespace FPSController
             // FIXME : Does not apply gravity, Should be handled on OnStateFixedUpdate instead ?
 
             // Apply ground adjustment
-            if (!_groundChecker.IsGrounded) return;
-            var adjustment = _groundChecker.GetGroundAdjustment();
+            if (!_body.IsGrounded) return;
+            var adjustment = _body.GetGroundAdjustment();
 
             _rb.ApplyVerticalVelocity(adjustment / Time.fixedDeltaTime);
         }
@@ -41,41 +42,18 @@ namespace FPSController
         {
             Debug.Log("Grounded OnEnter");
             
-            _groundChecker.UseExtendedGroundCheck = true;
+            _body.UseExtendedGroundCheck = true;
         }
 
         public void OnExit()
         {
-            _groundChecker.UseExtendedGroundCheck = false;
+            _body.UseExtendedGroundCheck = false;
         }
-
-        #region Setup
         
-        public void SetPlayerController(PlayerController playerController)
-        {
-            _playerController = playerController;
-        }
-
-        public void SetRigidbody(Rigidbody rb)
-        {
-            _rb = rb;
-        }
-
-        public void SetGroundChecker(PlayerGroundChecker groundChecker)
-        {
-            _groundChecker = groundChecker;
-        }
-
-        public void SetInputReader(FPSInputReader inputReader)
-        {
-            _inputReader = inputReader;
-        }
-
-        #endregion
         public void HandleMovementInputs()
         {
             var input = _inputReader.Direction;
-            var direction = _groundChecker.Forward * input.y + _groundChecker.Right * input.x;
+            var direction = _body.Forward * input.y + _body.Right * input.x;
             var movement = direction * movementSpeed;
 
             _rb.AddForce(movement, ForceMode.VelocityChange);
@@ -91,5 +69,33 @@ namespace FPSController
         {
             return groundDrag;
         }
+        
+        #endregion
+
+        #region Setup
+        
+        public void SetPlayerController(PlayerController playerController)
+        {
+            _playerController = playerController;
+        }
+
+        public void SetRigidbody(Rigidbody rb)
+        {
+            _rb = rb;
+        }
+
+        public void SetPlayerBody(PlayerBody body)
+        {
+            _body = body;
+        }
+
+        public void SetInputReader(FPSInputReader inputReader)
+        {
+            _inputReader = inputReader;
+        }
+
+        #endregion
+        
+        
     }
 }

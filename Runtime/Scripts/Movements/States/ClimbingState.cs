@@ -12,7 +12,7 @@ namespace FPSController
         [SerializeField] private CapsuleCollider capsuleCollider;
 
         private PlayerController _playerController;
-        private PlayerGroundChecker _groundChecker;
+        private PlayerBody _body;
         private FPSInputReader _inputReader;
         private Rigidbody _rb;
         
@@ -38,7 +38,7 @@ namespace FPSController
             if (wallChecker == null) Debug.LogError("WallChecker is not assigned in ClimbingState");
             if (capsuleCollider == null) Debug.LogError("CapsuleCollider is not assigned in ClimbingState");
             
-            _groundChecker.OnGroundRetrieved += () => _hasTouchedGround = true;
+            _body.OnGroundRetrieved += () => _hasTouchedGround = true;
         }
 
         public void OnEnter()
@@ -101,9 +101,9 @@ namespace FPSController
             _rb = rb;
         }
 
-        public void SetGroundChecker(PlayerGroundChecker groundChecker)
+        public void SetPlayerBody(PlayerBody body)
         {
-            _groundChecker = groundChecker;
+            _body = body;
         }
 
         public void SetInputReader(FPSInputReader inputReader)
@@ -136,7 +136,7 @@ namespace FPSController
         {
             var input = _inputReader.Direction;
 
-            var right = Vector3.ProjectOnPlane(_groundChecker.Right, wallChecker.FrontWallNormal).normalized;
+            var right = Vector3.ProjectOnPlane(_body.Right, wallChecker.FrontWallNormal).normalized;
 
             var steerDirection = right * _inputReader.Direction.x; 
             var movement = steerDirection * (climbingSpeed * horizontalClimbingSpeedRatio);

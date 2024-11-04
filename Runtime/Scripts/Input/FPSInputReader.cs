@@ -20,7 +20,7 @@ namespace FPSController
 
         FPSInputAction inputActions;
 
-        public Vector3 Direction => inputActions.Player.Move.ReadValue<Vector2>().ClampMagnitude(1f);
+        public Vector2 Direction => inputActions.Player.Move.ReadValue<Vector2>().ClampMagnitude(1f);
 
         void OnEnable()
         {
@@ -33,6 +33,7 @@ namespace FPSController
             inputActions.Enable();
 
             Jump += HandleJumpInputs;
+            Crouch += HandleCrouchInputs;
         }
 
         public void OnMove(InputAction.CallbackContext context)
@@ -73,6 +74,12 @@ namespace FPSController
 
         bool IsDeviceMouse(InputAction.CallbackContext context) => context.control.device.name == "Mouse";
 
+        #region Crouch Inputs
+        
+        public bool IsCrouchKeyPressed { get; private set; }
+        public bool IsCrouchKeyReleased { get; private set; }
+        public bool IsCrouchKeyHeld { get; private set; }
+        
         public void OnCrouch(InputAction.CallbackContext context)
         {
             switch (context.phase)
@@ -85,6 +92,28 @@ namespace FPSController
                     break;
             }
         }
+
+        private void HandleCrouchInputs(bool isKeyPressed)
+        {
+            if (isKeyPressed)
+            {
+                IsCrouchKeyPressed = true;
+                IsCrouchKeyHeld = true;
+            }
+            else
+            {
+                IsCrouchKeyReleased = true;
+                IsCrouchKeyHeld = false;
+            }
+        }
+        
+        public void UpdateCrouchInputs()
+        {
+            IsCrouchKeyPressed = false;
+            IsCrouchKeyReleased = false;
+        }
+        
+        #endregion
 
         public void OnSpecialAction(InputAction.CallbackContext context)
         {
